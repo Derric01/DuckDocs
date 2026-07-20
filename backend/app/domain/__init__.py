@@ -1,0 +1,1 @@
+"""Framework-agnostic domain contracts."""
