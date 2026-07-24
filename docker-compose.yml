@@ -1,0 +1,105 @@
+name: duckdocs
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${DUCKDOCS_FRONTEND_PORT:-3000}:3000"
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      DUCKDOCS_API_URL: http://backend:8000/api/v1
+      HOSTNAME: "0.0.0.0"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [duckdocs_internal]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:3000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "${DUCKDOCS_API_PORT:-8000}:8000"
+    environment:
+      DUCKDOCS_API_HOST: 0.0.0.0
+      DUCKDOCS_API_PORT: 8000
+      DUCKDOCS_FRONTEND_ORIGIN: http://localhost:${DUCKDOCS_FRONTEND_PORT:-3000}
+      DUCKDOCS_DATA_ROOT: /app/data
+      DUCKDOCS_LOCAL_MODEL: ${DUCKDOCS_LOCAL_MODEL:-gemma3:1b}
+      DUCKDOCS_CHAT_MODEL: ${DUCKDOCS_CHAT_MODEL:-gemma3:1b}
+      DUCKDOCS_EMBED_MODEL: ${DUCKDOCS_EMBED_MODEL:-nomic-embed-text}
+      OLLAMA_BASE_URL: http://ollama:11434
+      DUCKDOCS_CHROMA_URL: http://chromadb:8000
+      DUCKDOCS_DB_URL: postgresql+psycopg://${DUCKDOCS_POSTGRES_USER:-duckdocs}:${DUCKDOCS_POSTGRES_PASSWORD:-duckdocs-local-only}@postgres:5432/${DUCKDOCS_POSTGRES_DB:-duckdocs}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [duckdocs_internal]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16.6-alpine
+    environment:
+      POSTGRES_DB: ${DUCKDOCS_POSTGRES_DB:-duckdocs}
+      POSTGRES_USER: ${DUCKDOCS_POSTGRES_USER:-duckdocs}
+      POSTGRES_PASSWORD: ${DUCKDOCS_POSTGRES_PASSWORD:-duckdocs-local-only}
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks: [duckdocs_internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:0.5.4
+    volumes:
+      - ./data/models:/root/.ollama
+    restart: unless-stopped
+    networks: [duckdocs_internal]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  chromadb:
+    image: chromadb/chroma:0.5.23
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: /chroma/chroma
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - ./data/vectors:/chroma/chroma
+    restart: unless-stopped
+    networks: [duckdocs_internal]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+networks:
+  duckdocs_internal:
+    driver: bridge

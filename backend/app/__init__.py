@@ -1,0 +1,1 @@
+"""DuckDocs API application."""
