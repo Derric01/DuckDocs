@@ -17,7 +17,7 @@ from app.core.config import Settings
 from app.domain.models import FidelityTier
 from app.services.parsing import ParsedDocument, ParsedPage
 
-AnchorQuality = Literal["line", "paragraph", "cell"]
+AnchorQuality = Literal["line", "paragraph", "cell", "bbox"]
 
 
 @dataclass(slots=True)
@@ -29,6 +29,7 @@ class ChunkCandidate:
     ocr_confidence: float | None
     anchor_quality: AnchorQuality
     fidelity_tier: FidelityTier
+    bbox: tuple[float, float, float, float] | None = None
 
 
 def _paragraphs(text: str) -> list[tuple[int, int, str]]:
@@ -73,15 +74,19 @@ def _chunk_page(
         text = " ".join(part[2] for part in group).strip()
         if not text:
             return
+        is_ocr = page.source == "ocr"
         chunks.append(
             ChunkCandidate(
                 page=page.page_number,
                 line_start=group[0][0],
                 line_end=group[-1][1],
                 text=text,
-                ocr_confidence=page.confidence if page.source == "ocr" else None,
-                anchor_quality=anchor_quality,
+                ocr_confidence=page.confidence if is_ocr else None,
+                # An OCR chunk with a real box gets the finer bbox anchor;
+                # without one it must not claim better precision than it has.
+                anchor_quality="bbox" if (is_ocr and page.bbox is not None) else anchor_quality,
                 fidelity_tier=fidelity_tier,
+                bbox=page.bbox.as_tuple() if (is_ocr and page.bbox is not None) else None,
             )
         )
 

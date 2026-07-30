@@ -84,7 +84,9 @@ class DocumentRepository:
         self.jobs[job.id] = job
         self._persist()
 
-    def index_document_chunks(self, document_id: str, chunks: list[ChunkCandidate]) -> int:
+    def index_document_chunks(
+        self, document_id: str, chunks: list[ChunkCandidate], ocr_engine: str | None = None
+    ) -> int:
         document = self.documents.get(document_id)
         if document is None:
             return 0
@@ -109,6 +111,8 @@ class DocumentRepository:
                 anchor_quality=chunk.anchor_quality,
                 fidelity_tier=chunk.fidelity_tier,
                 ocr_confidence=chunk.ocr_confidence,
+                ocr_engine=ocr_engine if chunk.ocr_confidence is not None else None,
+                bbox=chunk.bbox,
             )
         self._persist()
         return len(chunks)

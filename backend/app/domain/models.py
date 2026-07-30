@@ -36,6 +36,9 @@ class Evidence(BaseModel):
     anchor_quality: Literal["line", "paragraph", "bbox", "cell"] = "line"
     fidelity_tier: FidelityTier = "full_layout"
     ocr_confidence: float | None = Field(default=None, ge=0, le=1)
+    ocr_engine: str | None = None
+    # Normalized page-relative box (x, y, width, height), top-left origin.
+    bbox: tuple[float, float, float, float] | None = None
 
 
 class Document(BaseModel):

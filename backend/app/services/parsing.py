@@ -5,10 +5,13 @@ list of pages, each carrying its own text, provenance (native text layer vs.
 OCR), and — when OCR was used — a confidence score. This is the seam the
 chunker (`app/services/chunking.py`) builds evidence anchors from.
 
-OCR runs fully locally via Tesseract with no page cap and no network call:
-every page of a scanned PDF is recognized, not just a sampled prefix, and
-there is no API quota to exhaust. Confidence is always captured and never
-silently discarded (RULE-10) — low-confidence OCR is labeled, not hidden.
+OCR runs fully locally through a pluggable engine (`app/services/ocr`,
+PaddleOCR by default) with no page cap and no per-document quota: every page
+of a scanned PDF is recognized, not just a sampled prefix. Scanned pages are
+recognized in batches so a long document amortizes model overhead instead of
+paying it per page. Confidence and bounding boxes are always captured and
+never silently discarded (RULE-10) — low-confidence OCR is labeled, not
+hidden.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from xml.etree import ElementTree
 
 from app.core.config import Settings
 from app.domain.models import FidelityTier
+from app.services.ocr import BoundingBox, OcrEngine, build_engine
 
 try:
     import fitz  # PyMuPDF
@@ -32,10 +36,8 @@ except ImportError:  # pragma: no cover - exercised only if dependency missing
     fitz = None
 
 try:
-    import pytesseract
-    from PIL import Image, ImageOps, ImageSequence
+    from PIL import Image, ImageSequence
 except ImportError:  # pragma: no cover
-    pytesseract = None
     Image = None  # type: ignore[assignment]
 
 try:
@@ -76,6 +78,8 @@ class ParsedPage:
     text: str
     source: PageSource
     confidence: float | None = None
+    bbox: BoundingBox | None = None
+    engine: str | None = None
 
 
 @dataclass(slots=True)
@@ -83,6 +87,7 @@ class ParsedDocument:
     pages: list[ParsedPage]
     fidelity_tier: FidelityTier
     page_count: int
+    ocr_engine: str | None = None
 
 
 def parse_upload(
@@ -272,42 +277,43 @@ def parse_pptx(payload: bytes) -> ParsedDocument | None:
     return ParsedDocument(pages=pages, fidelity_tier="structural", page_count=len(pages))
 
 
-def preprocess_for_ocr(image: Image.Image) -> Image.Image:
-    """Lightweight, dependency-free preprocessing: grayscale + contrast stretch.
+def _ocr_pages(
+    images: list[Image.Image],
+    settings: Settings,
+    engine: OcrEngine,
+    start_index: int = 1,
+    on_page: ProgressCallback | None = None,
+    total_override: int | None = None,
+) -> list[ParsedPage]:
+    """Recognize images in batches, reporting progress as each batch lands.
 
-    Full deskew/denoise/binarize (docs/22_OCR_PIPELINE.md §5) needs an image
-    processing library beyond Pillow (e.g. OpenCV); deferred to keep the
-    container image lean. Grayscale + autocontrast alone measurably improves
-    Tesseract accuracy on typical scans and photos.
+    Batching matters for throughput: PaddleOCR amortizes model overhead across
+    a batch, so a long scanned document is materially faster than one call per
+    page. Batch size is bounded so peak memory stays predictable on a large
+    document rather than scaling with page count.
     """
-    grayscale = ImageOps.grayscale(image)
-    return ImageOps.autocontrast(grayscale)
+    pages: list[ParsedPage] = []
+    total = total_override if total_override is not None else len(images)
+    batch_size = max(1, settings.ocr_batch_size)
 
-
-def run_ocr(image: Image.Image, languages: str) -> tuple[str, float | None]:
-    if pytesseract is None:  # pragma: no cover
-        return "", None
-    prepared = preprocess_for_ocr(image)
-    try:
-        data = pytesseract.image_to_data(prepared, lang=languages, output_type=pytesseract.Output.DICT)
-    except Exception:
-        return "", None
-    words: list[str] = []
-    confidences: list[float] = []
-    for text, conf in zip(data.get("text", []), data.get("conf", []), strict=False):
-        stripped = text.strip()
-        if not stripped:
-            continue
-        words.append(stripped)
-        try:
-            conf_value = float(conf)
-        except (TypeError, ValueError):
-            continue
-        if conf_value >= 0:
-            confidences.append(conf_value)
-    recognized = " ".join(words)
-    confidence = (sum(confidences) / len(confidences) / 100.0) if confidences else None
-    return recognized, confidence
+    for offset in range(0, len(images), batch_size):
+        batch = images[offset : offset + batch_size]
+        results = engine.recognize_batch(batch, settings.ocr_languages)
+        for position, result in enumerate(results):
+            page_number = start_index + offset + position
+            pages.append(
+                ParsedPage(
+                    page_number=page_number,
+                    text=result.text.strip(),
+                    source="ocr",
+                    confidence=result.confidence,
+                    bbox=result.envelope,
+                    engine=result.engine,
+                )
+            )
+            if on_page:
+                on_page(page_number, total)
+    return pages
 
 
 def parse_image(payload: bytes, settings: Settings, on_page: ProgressCallback | None = None) -> ParsedDocument | None:
@@ -319,17 +325,23 @@ def parse_image(payload: bytes, settings: Settings, on_page: ProgressCallback | 
     except Exception:
         return None
 
-    frame_count = getattr(image, "n_frames", 1)
-    pages: list[ParsedPage] = []
-    frames = ImageSequence.Iterator(image) if frame_count > 1 else [image]
-    for index, frame in enumerate(frames, start=1):
-        text, confidence = run_ocr(frame.convert("RGB"), settings.ocr_languages)
-        pages.append(ParsedPage(index, text.strip(), "ocr", confidence))
-        if on_page:
-            on_page(index, frame_count)
+    frame_count = int(getattr(image, "n_frames", 1) or 1)
+    frames = (
+        [frame.convert("RGB") for frame in ImageSequence.Iterator(image)]
+        if frame_count > 1
+        else [image.convert("RGB")]
+    )
+
+    engine = build_engine(settings)
+    pages = _ocr_pages(frames, settings, engine, start_index=1, on_page=on_page)
     if not pages or not any(page.text for page in pages):
         return None
-    return ParsedDocument(pages=pages, fidelity_tier="ocr_dependent", page_count=len(pages))
+    return ParsedDocument(
+        pages=pages,
+        fidelity_tier="ocr_dependent",
+        page_count=len(pages),
+        ocr_engine=engine.name,
+    )
 
 
 def parse_pdf(payload: bytes, settings: Settings, on_page: ProgressCallback | None = None) -> ParsedDocument | None:
@@ -340,43 +352,73 @@ def parse_pdf(payload: bytes, settings: Settings, on_page: ProgressCallback | No
     except Exception:
         return None
 
-    pages: list[ParsedPage] = []
+    native_pages: dict[int, ParsedPage] = {}
+    scan_numbers: list[int] = []
+    scan_images: list[Image.Image] = []
+    native_fallback: dict[int, str] = {}
     total = document.page_count
+
     try:
         for index in range(total):
             page = document.load_page(index)
+            page_number = index + 1
             native_text = page.get_text("text").strip()
+
             if len(native_text) >= settings.ocr_min_chars_per_page:
-                pages.append(ParsedPage(index + 1, native_text, "native"))
+                native_pages[page_number] = ParsedPage(page_number, native_text, "native")
                 if on_page:
-                    on_page(index + 1, total)
+                    on_page(page_number, total)
                 continue
 
-            # Text layer absent or sparse: OCR this page. Every page is
-            # processed -- there is no cap on how many scanned pages a
-            # document may have (OCR-G02/OCR-AD-03), which is what makes
-            # this "unlimited" OCR rather than a metered/paged API call.
+            # Text layer absent or sparse -- this page needs OCR. Every such
+            # page is queued; there is no cap on how many scanned pages a
+            # document may have (OCR-G02/OCR-AD-03).
             if Image is not None:
                 pixmap = page.get_pixmap(dpi=settings.ocr_dpi)
-                image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
-                ocr_text, confidence = run_ocr(image, settings.ocr_languages)
-            else:  # pragma: no cover
-                ocr_text, confidence = "", None
-
-            if ocr_text.strip():
-                pages.append(ParsedPage(index + 1, ocr_text.strip(), "ocr", confidence))
-            elif native_text:
-                pages.append(ParsedPage(index + 1, native_text, "native"))
-            if on_page:
-                on_page(index + 1, total)
+                scan_images.append(Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples))
+                scan_numbers.append(page_number)
+                if native_text:
+                    native_fallback[page_number] = native_text
+            elif native_text:  # pragma: no cover
+                native_pages[page_number] = ParsedPage(page_number, native_text, "native")
     finally:
         document.close()
 
+    engine = build_engine(settings)
+    ocr_pages: dict[int, ParsedPage] = {}
+    if scan_images:
+        # Progress is reported against the whole document so the job bar
+        # reflects real position, not position within the scanned subset.
+        recognized = _ocr_pages(
+            scan_images,
+            settings,
+            engine,
+            start_index=1,
+            on_page=None,
+            total_override=total,
+        )
+        for position, parsed in enumerate(recognized):
+            page_number = scan_numbers[position]
+            parsed.page_number = page_number
+            if parsed.text:
+                ocr_pages[page_number] = parsed
+            elif page_number in native_fallback:
+                ocr_pages[page_number] = ParsedPage(page_number, native_fallback[page_number], "native")
+            if on_page:
+                on_page(page_number, total)
+
+    pages = [
+        page
+        for page in (native_pages.get(number) or ocr_pages.get(number) for number in range(1, total + 1))
+        if page is not None
+    ]
     if not pages:
         return None
+
     ocr_used = any(page.source == "ocr" for page in pages)
     return ParsedDocument(
         pages=pages,
         fidelity_tier="ocr_dependent" if ocr_used else "full_layout",
         page_count=len(pages),
+        ocr_engine=engine.name if ocr_used else None,
     )

@@ -47,6 +47,7 @@ from app.providers.secrets import SecretStore
 from app.repositories import AnyRepository
 from app.repositories.sql import build_repository
 from app.services.chunking import AnchorQuality, chunk_document
+from app.services.ocr import build_engine
 from app.services.parsing import SUPPORTED_EXTENSIONS, ParsedDocument, parse_upload
 from app.services.rag import RagService
 from app.services.vector_store import VectorStore
@@ -177,12 +178,15 @@ async def ready(
 ) -> dict[str, object]:
     snapshot = registry.status_snapshot()
     metadata_store = "postgres" if settings.db_url else "json"
+    ocr_engine = build_engine(settings)
     return {
         "status": "ready",
         "checks": {
             "metadata_store": metadata_store,
             "file_store": "ok",
             "vector_store": store.health(),
+            "ocr_engine": ocr_engine.name,
+            "ocr_ready": ocr_engine.available(),
             "ollama": "ok" if snapshot["chat"]["provider_type"] == "ollama" and snapshot["chat"]["connected"] else "optional",
             "chat_provider": f"{snapshot['chat']['provider_type']}:{snapshot['chat']['model']}",
             "embedding_provider": f"{snapshot['embedding']['provider_type']}:{snapshot['embedding']['model']}",
@@ -260,7 +264,7 @@ async def process_ingest(
     chunks = await asyncio.to_thread(chunk_document, parsed, runtime, anchor_quality)
 
     repo.update_job(job_id, status="processing", stage="embedding", progress_pct=80)
-    indexed_count = repo.index_document_chunks(document_id, chunks)
+    indexed_count = repo.index_document_chunks(document_id, chunks, parsed.ocr_engine)
 
     if indexed_count:
         repo.update_job(job_id, status="processing", stage="indexing", progress_pct=92)

@@ -28,7 +28,10 @@ class Settings:
     db_url: str | None = None
     chroma_url: str | None = None
     api_token: str | None = None
+    ocr_engine: str = "auto"
     ocr_languages: str = "eng"
+    ocr_model_dir: str | None = None
+    ocr_batch_size: int = 8
     ocr_dpi: int = 300
     ocr_min_chars_per_page: int = 40
     chunk_max_words: int = 180
@@ -55,7 +58,10 @@ class Settings:
             db_url=db_url,
             chroma_url=chroma_url,
             api_token=os.getenv("DUCKDOCS_API_TOKEN") or None,
+            ocr_engine=os.getenv("DUCKDOCS_OCR_ENGINE", "auto"),
             ocr_languages=os.getenv("DUCKDOCS_OCR_LANGUAGES", "eng"),
+            ocr_model_dir=os.getenv("DUCKDOCS_OCR_MODEL_DIR") or None,
+            ocr_batch_size=int(os.getenv("DUCKDOCS_OCR_BATCH_SIZE", "8")),
             ocr_dpi=int(os.getenv("DUCKDOCS_OCR_DPI", "300")),
             ocr_min_chars_per_page=int(os.getenv("DUCKDOCS_OCR_MIN_CHARS_PER_PAGE", "40")),
             chunk_max_words=int(os.getenv("DUCKDOCS_CHUNK_MAX_WORDS", "180")),

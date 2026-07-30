@@ -70,6 +70,8 @@ if _SQLALCHEMY_AVAILABLE:
         anchor_quality: Mapped[str] = mapped_column(String(32), default="line")
         fidelity_tier: Mapped[str] = mapped_column(String(32), default="full_layout")
         ocr_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+        ocr_engine: Mapped[str | None] = mapped_column(String(32), nullable=True)
+        bbox: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
 
     class ProviderConfigRow(Base):
         __tablename__ = "provider_configs"
@@ -119,7 +121,9 @@ class SqlDocumentRepository:
         self.documents[document.id] = document
         self.jobs[job.id] = job
 
-    def index_document_chunks(self, document_id: str, chunks: list[ChunkCandidate]) -> int:
+    def index_document_chunks(
+        self, document_id: str, chunks: list[ChunkCandidate], ocr_engine: str | None = None
+    ) -> int:
         document = self.get_document(document_id)
         if document is None:
             return 0
@@ -145,6 +149,8 @@ class SqlDocumentRepository:
                     anchor_quality=chunk.anchor_quality,
                     fidelity_tier=chunk.fidelity_tier,
                     ocr_confidence=chunk.ocr_confidence,
+                    ocr_engine=ocr_engine if chunk.ocr_confidence is not None else None,
+                    bbox=chunk.bbox,
                 )
                 session.merge(self._from_evidence(evidence))
                 self.evidence[evidence_id] = evidence
@@ -267,6 +273,8 @@ class SqlDocumentRepository:
                 "anchor_quality": row.anchor_quality,
                 "fidelity_tier": row.fidelity_tier,
                 "ocr_confidence": row.ocr_confidence,
+                "ocr_engine": row.ocr_engine,
+                "bbox": tuple(row.bbox) if row.bbox else None,
             }
         )
 
