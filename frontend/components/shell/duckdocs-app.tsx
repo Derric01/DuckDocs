@@ -50,7 +50,7 @@ import {
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, duckDocsApi } from '@/lib/api/client';
-import type { DocumentRecord, EvidenceRecord, MessageRecord, Surface } from '@/lib/types';
+import type { AnchorQuality, DocumentRecord, EvidenceRecord, MessageRecord, Surface } from '@/lib/types';
 
 interface DuckDocsAppProps {
   initialSurface: Surface;
@@ -228,15 +228,27 @@ function CommandPalette({ open, onClose, onNavigate }: { open: boolean; onClose:
   );
 }
 
+const ANCHOR_QUALITY_LABEL: Record<AnchorQuality, string> = { line: 'Line-level', paragraph: 'Paragraph-level', cell: 'Cell-level', bbox: 'Bounding box' };
+const LOW_OCR_CONFIDENCE_THRESHOLD = 0.6;
+
 function EvidencePane({ evidence, onClose, onAnnotate }: { evidence: EvidenceRecord | null; onClose: () => void; onAnnotate: () => void }) {
   if (!evidence) {
     return <aside className="evidence-pane empty-evidence-pane"><div className="pane-heading"><div><span className="pane-kicker">Evidence</span><h2>Nothing selected</h2></div><button className="icon-button" onClick={onClose} aria-label="Close evidence pane"><X size={16} /></button></div><EmptyState icon={PanelRight} title="Select a citation to inspect it" description="Evidence opens here when you click a citation, search result, or reviewed passage." /></aside>;
   }
+  const isLowConfidence = typeof evidence.ocrConfidence === 'number' && evidence.ocrConfidence < LOW_OCR_CONFIDENCE_THRESHOLD;
   return (
     <aside className="evidence-pane" aria-label="Evidence inspector">
       <div className="pane-heading"><div><span className="pane-kicker">Evidence inspector</span><h2>Source passage</h2></div><button className="icon-button" onClick={onClose} aria-label="Close evidence pane"><X size={16} /></button></div>
       <div className="evidence-source"><div className="file-icon small"><FileText size={16} /></div><div><strong>{evidence.documentName}</strong><span>{evidence.section}</span></div><button className="icon-button"><MoreHorizontal size={16} /></button></div>
       <div className="evidence-location"><span><BookOpen size={14} /> Page {evidence.page}</span><span className="mono">Lines {evidence.lines}</span><span className="relevance-high"><span className="confidence-dot" />{evidence.relevance} relevance</span></div>
+      {evidence.fidelity === 'OCR dependent' && (
+        <div className={`ocr-confidence-banner ${isLowConfidence ? 'low' : ''}`} role="note">
+          <ShieldCheck size={13} />
+          {typeof evidence.ocrConfidence === 'number'
+            ? `Recognized by local OCR at ${Math.round(evidence.ocrConfidence * 100)}% confidence${isLowConfidence ? ' -- verify against the source before relying on it' : ''}.`
+            : 'Recognized by local OCR -- confidence unavailable for this chunk.'}
+        </div>
+      )}
       <div className="page-preview">
         <div className="preview-page-header"><span>{evidence.documentName.toUpperCase()}</span><span className="mono">PAGE {String(evidence.page).padStart(2, '0')}</span></div>
         <div className="preview-title">{evidence.section}</div>
@@ -245,7 +257,7 @@ function EvidencePane({ evidence, onClose, onAnnotate }: { evidence: EvidenceRec
       </div>
       <div className="evidence-quote"><span className="quote-mark">"</span><p>{evidence.snippet}</p></div>
       <div className="evidence-actions"><button className="button button-secondary" onClick={onAnnotate}><Highlighter size={15} /> Annotate</button><button className="button button-secondary"><ArrowDownToLine size={15} /> Export passage</button></div>
-      <div className="evidence-meta"><div><span>Anchor quality</span><strong>Line-level</strong></div><div><span>Relevance</span><strong className="confidence-text">{evidence.relevance}</strong></div><div><span>Source</span><strong>Local index</strong></div></div>
+      <div className="evidence-meta"><div><span>Anchor quality</span><strong>{evidence.anchorQuality ? ANCHOR_QUALITY_LABEL[evidence.anchorQuality] : 'Line-level'}</strong></div><div><span>Fidelity</span><strong>{evidence.fidelity ?? 'Full layout'}</strong></div><div><span>Relevance</span><strong className="confidence-text">{evidence.relevance}</strong></div></div>
     </aside>
   );
 }
@@ -464,7 +476,7 @@ function IntelligenceSurface({
                   className="visually-hidden"
                   type="file"
                   multiple
-                  accept=".pdf,.doc,.docx,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.ts,.tsx,.js,.jsx,.py,.json"
+                  accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.html,.htm,.json,.xml,.yaml,.yml,.png,.jpg,.jpeg,.webp,.tiff,.tif,.bmp,.ts,.tsx,.js,.jsx,.py,.java,.c,.cpp,.cs,.go,.rs,.sql,.css,.sh,.rb,.php,.kt,.swift"
                   onChange={(event) => {
                     void addDocuments(event.target.files);
                   }}
@@ -521,11 +533,11 @@ function LibrarySurface({ documents, loading, apiState, onUpload, onInspectDocum
   return (
     <section className="surface-content library-surface">
       <div className="surface-header"><div><span className="surface-kicker">LIBRARY</span><h1>Your documents</h1><p>{documents.length} documents / {totalPages} indexed pages / {apiState === 'ready' ? 'stored locally' : 'local API offline'}</p></div><div className="header-actions"><button className="button button-secondary"><ListFilter size={15} /> Filter</button><button className="button button-primary" onClick={() => inputRef.current?.click()} disabled={uploading}><Upload size={15} /> Add documents</button><input ref={inputRef} className="visually-hidden" type="file" multiple onChange={(event) => handleFiles(event.target.files)} /></div></div>
-      <div className={`dropzone ${dragging ? 'dragging' : ''} ${uploading ? 'uploading' : ''}`} onClick={() => inputRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); handleFiles(event.dataTransfer.files); }} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click(); }}><div className="dropzone-icon">{uploading ? <LoaderCircle className="spin" size={20} /> : <Upload size={20} />}</div><div><strong>{uploading ? 'Adding files to your library' : 'Drop files here or choose from your device'}</strong><span>PDF, DOCX, TXT, Markdown, CSV, images, and source code</span></div><span className="dropzone-action">{uploading ? 'Indexing starts next' : 'Browse files'}</span></div>
+      <div className={`dropzone ${dragging ? 'dragging' : ''} ${uploading ? 'uploading' : ''}`} onClick={() => inputRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); handleFiles(event.dataTransfer.files); }} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click(); }}><div className="dropzone-icon">{uploading ? <LoaderCircle className="spin" size={20} /> : <Upload size={20} />}</div><div><strong>{uploading ? 'Adding files to your library' : 'Drop files here or choose from your device'}</strong><span>PDF, DOCX, XLSX, PPTX, TXT, Markdown, CSV, HTML, images (OCR), and source code</span></div><span className="dropzone-action">{uploading ? 'Indexing starts next' : 'Browse files'}</span></div>
       <div className="library-toolbar"><div className="filter-tabs">{(['All', 'Ready', 'Needs review'] as const).map((item) => <button key={item} className={filter === item ? 'active' : ''} onClick={() => setFilter(item)}>{item}{item === 'All' && <span>{documents.length}</span>}{item === 'Ready' && <span>{readyCount}</span>}{item === 'Needs review' && <span className="needs-count">{reviewCount}</span>}</button>)}</div><label className="inline-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter documents" /></label><button className="icon-button"><LayoutGrid size={16} /></button></div>
       {loading && <div className="inline-state"><LoaderCircle className="spin" size={15} /> Loading local documents</div>}
-      <div className="document-list" role="table" aria-label="Document library"><div className="document-list-head" role="row"><span>Name</span><span>Type</span><span>Status</span><span>Updated</span><span aria-hidden="true" /></div>{filteredDocuments.map((doc) => { const Icon = formatFileIcon(doc.type); return <button className="document-row" key={doc.id} role="row" onClick={() => onInspectDocument(doc)}><span className="document-name"><span className="file-icon"><Icon size={17} /></span><span><strong>{doc.name}</strong><small>{doc.category} / {doc.size}</small></span></span><span className="doc-type mono">{doc.type}</span><span><StatusBadge status={doc.status} /></span><span className="document-updated">{doc.updated}</span><ChevronRight size={16} className="muted-icon" /></button>; })}</div>
-      {filteredDocuments.length === 0 && <EmptyState icon={documents.length ? Search : Upload} title={documents.length ? 'No documents found' : 'Add your first document'} description={documents.length ? 'Try a different name or clear the current filter.' : 'Upload TXT, Markdown, CSV, or source files to create searchable evidence immediately. Binary files are stored and marked for review until parsers are connected.'} action={!documents.length ? <button className="button button-primary" onClick={() => inputRef.current?.click()}><Upload size={15} /> Add documents</button> : undefined} />}
+      <div className="document-list" role="table" aria-label="Document library"><div className="document-list-head" role="row"><span>Name</span><span>Type</span><span>Fidelity</span><span>Status</span><span>Updated</span><span aria-hidden="true" /></div>{filteredDocuments.map((doc) => { const Icon = formatFileIcon(doc.type); return <button className="document-row" key={doc.id} role="row" onClick={() => onInspectDocument(doc)}><span className="document-name"><span className="file-icon"><Icon size={17} /></span><span><strong>{doc.name}</strong><small>{doc.category} / {doc.size} / {doc.pages} {doc.pages === 1 ? 'page' : 'pages'}</small></span></span><span className="doc-type mono">{doc.type}</span><span><span className={`fidelity-badge ${doc.fidelity === 'OCR dependent' ? 'ocr' : doc.fidelity === 'Best effort' ? 'best-effort' : ''}`}>{doc.fidelity}</span></span><span><StatusBadge status={doc.status} /></span><span className="document-updated">{doc.updated}</span><ChevronRight size={16} className="muted-icon" /></button>; })}</div>
+      {filteredDocuments.length === 0 && <EmptyState icon={documents.length ? Search : Upload} title={documents.length ? 'No documents found' : 'Add your first document'} description={documents.length ? 'Try a different name or clear the current filter.' : 'Upload PDFs, Office documents, spreadsheets, images, or text/code files. Scanned pages and images are recognized with local OCR automatically.'} action={!documents.length ? <button className="button button-primary" onClick={() => inputRef.current?.click()}><Upload size={15} /> Add documents</button> : undefined} />}
       <div className="library-footer"><span>Showing {filteredDocuments.length} of {documents.length} documents</span><button onClick={onOpenSettings}>Manage indexing settings <ArrowUpRight size={13} /></button></div>
     </section>
   );
@@ -545,7 +557,7 @@ function ReviewSurface({ documents, onInspectDocument }: { documents: DocumentRe
             {reviewDocuments.map((document) => (
               <button className="review-item" key={document.id} onClick={() => onInspectDocument(document)}>
                 <span className="review-item-icon amber"><Highlighter size={16} /></span>
-                <span className="review-item-content"><strong>{document.name}</strong><span>{document.status === 'failed' ? 'Processing failed. Inspect the file and retry when parsers are configured.' : 'Stored locally, but no searchable evidence has been indexed yet.'}</span><small>{document.fidelity} / {document.updated}</small></span>
+                <span className="review-item-content"><strong>{document.name}</strong><span>{document.status === 'failed' ? 'Processing failed -- inspect the file and retry.' : 'No readable text was found, even after OCR. The file is stored but not searchable yet.'}</span><small>{document.fidelity} / {document.updated}</small></span>
                 <span className="review-tag">{document.status === 'failed' ? 'Failed' : 'Needs review'}</span>
                 <ChevronRight size={15} className="muted-icon" />
               </button>

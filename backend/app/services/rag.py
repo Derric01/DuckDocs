@@ -11,7 +11,7 @@ from uuid import uuid4
 from app.core.config import Settings
 from app.domain.models import Citation, GroundedResponse, SearchScope, utc_now
 from app.providers.registry import ProviderRegistry
-from app.repositories.memory import DocumentRepository
+from app.repositories import AnyRepository
 from app.services.vector_store import RetrievedChunk, VectorStore
 
 CITATION_RE = re.compile(r"\[chunk:([^\]]+)\]")
@@ -111,7 +111,7 @@ class RagService:
     def __init__(
         self,
         settings: Settings,
-        repository: DocumentRepository,
+        repository: AnyRepository,
         registry: ProviderRegistry,
         vector_store: VectorStore,
     ) -> None:

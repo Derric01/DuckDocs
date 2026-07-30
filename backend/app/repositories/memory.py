@@ -5,13 +5,13 @@ PostgreSQL/SQLAlchemy implementation without changing routers or services.
 """
 
 import json
-import re
 from collections.abc import Iterable
 from pathlib import Path
 
 from pydantic import ValidationError
 
 from app.domain.models import Document, Evidence, IngestJob, utc_now
+from app.services.chunking import ChunkCandidate
 
 
 class DocumentRepository:
@@ -84,33 +84,31 @@ class DocumentRepository:
         self.jobs[job.id] = job
         self._persist()
 
-    def index_document_text(self, document_id: str, text: str) -> int:
+    def index_document_chunks(self, document_id: str, chunks: list[ChunkCandidate]) -> int:
         document = self.documents.get(document_id)
         if document is None:
-            return 0
-
-        normalized = re.sub(r"\n{3,}", "\n\n", text.replace("\r\n", "\n").replace("\r", "\n")).strip()
-        if not normalized:
             return 0
 
         for evidence_id, evidence in list(self.evidence.items()):
             if evidence.document_id == document_id:
                 del self.evidence[evidence_id]
 
-        chunks = self._chunk_text(normalized)
-        for index, (line_start, line_end, snippet) in enumerate(chunks, start=1):
-            evidence_id = f"ev_{document_id.removeprefix('doc_')}_{index:02d}"
+        for index, chunk in enumerate(chunks, start=1):
+            evidence_id = f"ev_{document_id.removeprefix('doc_')}_{index:04d}"
             self.evidence[evidence_id] = Evidence(
                 id=evidence_id,
                 document_id=document_id,
                 document_name=document.name,
                 section="Imported content",
-                page=max(1, (line_start - 1) // 45 + 1),
-                line_start=line_start,
-                line_end=line_end,
-                snippet=snippet,
+                page=chunk.page,
+                line_start=chunk.line_start,
+                line_end=chunk.line_end,
+                snippet=chunk.text[:4000],
                 retrieval_score=0.74,
                 relevance="Medium",
+                anchor_quality=chunk.anchor_quality,
+                fidelity_tier=chunk.fidelity_tier,
+                ocr_confidence=chunk.ocr_confidence,
             )
         self._persist()
         return len(chunks)
@@ -154,37 +152,6 @@ class DocumentRepository:
 
     def all_evidence(self) -> Iterable[Evidence]:
         return self.evidence.values()
-
-    @staticmethod
-    def _chunk_text(text: str, max_chars: int = 900) -> list[tuple[int, int, str]]:
-        lines = [line.strip() for line in text.splitlines()]
-        chunks: list[tuple[int, int, str]] = []
-        current: list[str] = []
-        start_line = 1
-        current_length = 0
-
-        for index, line in enumerate(lines, start=1):
-            if not line and current:
-                chunks.append((start_line, index - 1, " ".join(current).strip()))
-                current = []
-                current_length = 0
-                start_line = index + 1
-                continue
-            if not line:
-                start_line = index + 1
-                continue
-            if current and current_length + len(line) + 1 > max_chars:
-                chunks.append((start_line, index - 1, " ".join(current).strip()))
-                current = [line]
-                current_length = len(line)
-                start_line = index
-                continue
-            current.append(line)
-            current_length += len(line) + 1
-
-        if current:
-            chunks.append((start_line, len(lines), " ".join(current).strip()))
-        return [chunk for chunk in chunks if chunk[2]][:12]
 
     @staticmethod
     def _score(evidence: Evidence, terms: set[str]) -> int:

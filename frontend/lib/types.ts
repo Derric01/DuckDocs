@@ -1,6 +1,9 @@
 export type Surface = 'library' | 'intelligence' | 'review' | 'settings';
 export type DocumentStatus = 'ready' | 'processing' | 'review' | 'failed';
 
+export type FidelityLabel = 'Full layout' | 'Structural' | 'OCR dependent' | 'Best effort';
+export type AnchorQuality = 'line' | 'paragraph' | 'bbox' | 'cell';
+
 export interface DocumentRecord {
   id: string;
   name: string;
@@ -10,7 +13,7 @@ export interface DocumentRecord {
   status: DocumentStatus;
   pages: number;
   category: string;
-  fidelity: 'Full layout' | 'Structural' | 'OCR dependent';
+  fidelity: FidelityLabel;
 }
 
 export interface EvidenceRecord {
@@ -22,6 +25,11 @@ export interface EvidenceRecord {
   lines: string;
   relevance: 'High' | 'Medium' | 'Low';
   snippet: string;
+  /** Chunk-level fidelity; a document's overall tier can be pulled down by any low-quality chunk. */
+  fidelity?: FidelityLabel;
+  anchorQuality?: AnchorQuality;
+  /** 0-1 OCR confidence. Present only when this chunk came from OCR -- never hidden when low (RULE-10). */
+  ocrConfidence?: number | null;
 }
 
 export interface MessageRecord {

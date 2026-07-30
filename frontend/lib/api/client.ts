@@ -1,4 +1,4 @@
-import type { DocumentRecord, EvidenceRecord } from '@/lib/types';
+import type { AnchorQuality, DocumentRecord, EvidenceRecord, FidelityLabel } from '@/lib/types';
 
 export interface ApiErrorShape {
   error: {
@@ -35,7 +35,7 @@ interface ApiDocument {
   mime_type: string;
   size_bytes: number;
   status: DocumentRecord['status'];
-  fidelity_tier: 'full_layout' | 'structural' | 'ocr_dependent';
+  fidelity_tier: 'full_layout' | 'structural' | 'ocr_dependent' | 'best_effort';
   pages: number;
   category: string;
   updated_at: string;
@@ -52,6 +52,9 @@ interface ApiEvidence {
   snippet: string;
   retrieval_score: number;
   relevance: EvidenceRecord['relevance'];
+  anchor_quality: AnchorQuality;
+  fidelity_tier: ApiDocument['fidelity_tier'];
+  ocr_confidence: number | null;
 }
 
 interface ApiUploadResponse {
@@ -96,9 +99,10 @@ function formatUpdated(value: string): string {
   return updated.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
-function mapFidelity(value: ApiDocument['fidelity_tier']): DocumentRecord['fidelity'] {
+function mapFidelity(value: ApiDocument['fidelity_tier']): FidelityLabel {
   if (value === 'full_layout') return 'Full layout';
   if (value === 'ocr_dependent') return 'OCR dependent';
+  if (value === 'best_effort') return 'Best effort';
   return 'Structural';
 }
 
@@ -126,6 +130,9 @@ function mapEvidence(evidence: ApiEvidence): EvidenceRecord {
     lines: `${evidence.line_start}-${evidence.line_end}`,
     relevance: evidence.relevance,
     snippet: evidence.snippet,
+    fidelity: mapFidelity(evidence.fidelity_tier),
+    anchorQuality: evidence.anchor_quality,
+    ocrConfidence: evidence.ocr_confidence,
   };
 }
 

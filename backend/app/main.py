@@ -9,17 +9,13 @@ the offline extractive/keyword path remains active.
 from __future__ import annotations
 
 import asyncio
-import io
 import json
-import re
-import zipfile
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from time import monotonic
 from typing import Annotated
 from uuid import uuid4
-from xml.etree import ElementTree
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,8 +44,10 @@ from app.domain.models import (
 )
 from app.providers.registry import ProviderRegistry
 from app.providers.secrets import SecretStore
-from app.repositories.memory import DocumentRepository
+from app.repositories import AnyRepository
 from app.repositories.sql import build_repository
+from app.services.chunking import AnchorQuality, chunk_document
+from app.services.parsing import SUPPORTED_EXTENSIONS, ParsedDocument, parse_upload
 from app.services.rag import RagService
 from app.services.vector_store import VectorStore
 
@@ -83,55 +81,14 @@ provider_registry = ProviderRegistry(settings)
 secret_store = SecretStore(settings.data_root)
 vector_store = VectorStore(settings)
 started_at = monotonic()
-TEXT_FILE_TYPES = {"txt", "md", "csv", "ts", "js", "py"}
 
 
-def extract_docx_text(payload: bytes) -> str | None:
-    try:
-        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-            part_names = [
-                name
-                for name in archive.namelist()
-                if name == "word/document.xml"
-                or name.startswith("word/header")
-                or name.startswith("word/footer")
-            ]
-            text_parts: list[str] = []
-            for part_name in sorted(part_names):
-                root = ElementTree.fromstring(archive.read(part_name))
-                for node in root.iter():
-                    if node.tag.endswith("}t") and node.text:
-                        text_parts.append(node.text)
-                    elif node.tag.endswith("}tab"):
-                        text_parts.append("\t")
-                    elif node.tag.endswith("}br") or node.tag.endswith("}p"):
-                        text_parts.append("\n")
-    except (ElementTree.ParseError, KeyError, OSError, zipfile.BadZipFile):
-        return None
-    extracted = re.sub(r"\n{3,}", "\n\n", "".join(text_parts)).strip()
-    if len(re.findall(r"[A-Za-z0-9]", extracted)) < 20:
-        return None
-    return extracted
-
-
-def extract_upload_text(payload: bytes, suffix: str) -> str | None:
-    if suffix == "docx":
-        return extract_docx_text(payload)
-    if suffix not in TEXT_FILE_TYPES:
-        return None
-    decoded: str | None = None
-    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
-        try:
-            decoded = payload.decode(encoding)
-            break
-        except UnicodeDecodeError:
-            continue
-    if decoded is None:
-        return None
-    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]+", " ", decoded)
-    if len(re.findall(r"[A-Za-z0-9]", cleaned)) < 20:
-        return None
-    return cleaned[:120_000]
+def _anchor_quality_for(suffix: str, parsed: ParsedDocument) -> AnchorQuality:
+    if suffix == "xlsx":
+        return "cell"
+    if parsed.fidelity_tier == "structural":
+        return "line"
+    return "paragraph"
 
 
 @app.middleware("http")
@@ -159,7 +116,7 @@ async def local_auth_and_correlation(request: Request, call_next: Callable[[Requ
     return response
 
 
-def get_repository() -> DocumentRepository:
+def get_repository() -> AnyRepository:
     return repository
 
 
@@ -180,7 +137,7 @@ def get_secrets() -> SecretStore:
 
 
 def get_rag(
-    repo: Annotated[DocumentRepository, Depends(get_repository)],
+    repo: Annotated[AnyRepository, Depends(get_repository)],
     registry: Annotated[ProviderRegistry, Depends(get_registry)],
     store: Annotated[VectorStore, Depends(get_vector_store)],
     runtime: Annotated[Settings, Depends(get_runtime_settings)],
@@ -235,7 +192,7 @@ async def ready(
 
 @app.get(f"{settings.api_prefix}/documents", response_model=PaginatedDocuments)
 async def list_documents(
-    repo: Annotated[DocumentRepository, Depends(get_repository)],
+    repo: Annotated[AnyRepository, Depends(get_repository)],
     limit: int = Query(default=25, ge=1, le=100),
     status: str | None = None,
 ) -> PaginatedDocuments:
@@ -246,7 +203,7 @@ async def list_documents(
 
 
 @app.get(f"{settings.api_prefix}/documents/{{document_id}}", response_model=Document)
-async def get_document(document_id: str, repo: Annotated[DocumentRepository, Depends(get_repository)]) -> Document:
+async def get_document(document_id: str, repo: Annotated[AnyRepository, Depends(get_repository)]) -> Document:
     document = repo.get_document(document_id)
     if document is None:
         raise DuckDocsError("not_found", "Document was not found.", 404)
@@ -254,26 +211,75 @@ async def get_document(document_id: str, repo: Annotated[DocumentRepository, Dep
 
 
 async def process_ingest(
-    repo: DocumentRepository,
+    repo: AnyRepository,
     rag: RagService,
+    runtime: Settings,
     document_id: str,
     job_id: str,
-    extracted_text: str | None,
+    payload: bytes,
+    suffix: str,
 ) -> None:
-    for stage, progress in (("parsing", 25), ("chunking", 50), ("embedding", 76), ("indexing", 94), ("ready", 100)):
-        await asyncio.sleep(0.15)
-        repo.update_job(job_id, status="processing" if progress < 100 else "ready", stage=stage, progress_pct=progress)
-    indexed_count = repo.index_document_text(document_id, extracted_text) if extracted_text else 0
+    """Real ingestion: parse (with OCR fallback), chunk, embed, index.
+
+    Parsing/OCR is CPU-bound and can take a while for large scanned PDFs, so
+    it runs in a worker thread (`asyncio.to_thread`) rather than inline on
+    the event loop -- the API stays responsive to health checks and other
+    requests while a big document is being recognized.
+    """
+    repo.update_job(job_id, status="processing", stage="parsing", progress_pct=5)
+
+    last_reported = 0
+
+    def on_page(current: int, total: int) -> None:
+        nonlocal last_reported
+        if current != total and current - last_reported < 5:
+            return
+        last_reported = current
+        progress_pct = 5 + int(55 * current / max(1, total))
+        repo.update_job(job_id, status="processing", stage="ocr", progress_pct=min(progress_pct, 60))
+
+    parsed = await asyncio.to_thread(parse_upload, payload, suffix, runtime, on_page)
+
+    if parsed is None or not parsed.pages:
+        repo.update_job(
+            job_id,
+            status="failed",
+            stage="failed",
+            progress_pct=100,
+            error={
+                "stage": "parsing",
+                "reason_code": "no_extractable_content",
+                "human_message": "DuckDocs could not find readable text in this file (via native parsing or OCR).",
+            },
+        )
+        repo.update_document(document_id, status="review")
+        return
+
+    repo.update_job(job_id, status="processing", stage="chunking", progress_pct=65)
+    anchor_quality = _anchor_quality_for(suffix, parsed)
+    chunks = await asyncio.to_thread(chunk_document, parsed, runtime, anchor_quality)
+
+    repo.update_job(job_id, status="processing", stage="embedding", progress_pct=80)
+    indexed_count = repo.index_document_chunks(document_id, chunks)
+
     if indexed_count:
-        rag.index_document(document_id)
-    repo.update_document(document_id, status="ready" if indexed_count else "review")
+        repo.update_job(job_id, status="processing", stage="indexing", progress_pct=92)
+        await asyncio.to_thread(rag.index_document, document_id)
+
+    repo.update_document(
+        document_id,
+        status="ready" if indexed_count else "review",
+        fidelity_tier=parsed.fidelity_tier,
+        pages=parsed.page_count,
+    )
+    repo.update_job(job_id, status="ready", stage="ready", progress_pct=100)
 
 
 @app.post(f"{settings.api_prefix}/documents", response_model=UploadResponse, status_code=201)
 async def upload_documents(
     files: Annotated[list[UploadFile], File(...)],
     background_tasks: BackgroundTasks,
-    repo: Annotated[DocumentRepository, Depends(get_repository)],
+    repo: Annotated[AnyRepository, Depends(get_repository)],
     runtime: Annotated[Settings, Depends(get_runtime_settings)],
     rag: Annotated[RagService, Depends(get_rag)],
 ) -> UploadResponse:
@@ -282,18 +288,16 @@ async def upload_documents(
     items: list[UploadItem] = []
     for file in files:
         suffix = Path(file.filename or "").suffix.lower().lstrip(".")
-        supported = {"pdf", "docx", "txt", "md", "csv", "png", "jpg", "jpeg", "ts", "js", "py"}
-        if suffix not in supported:
+        if suffix not in SUPPORTED_EXTENSIONS:
             raise DuckDocsError(
                 "unsupported_file_type",
                 f".{suffix or 'file'} is not supported.",
                 415,
-                "Choose PDF, DOCX, TXT, MD, CSV, image, or source files.",
+                "Choose PDF, Office documents, spreadsheets, presentations, images, or text/code files.",
             )
         payload = await file.read()
         if len(payload) > runtime.max_file_size:
             raise DuckDocsError("file_too_large", f"{file.filename} exceeds the 50 MB upload limit.", 413)
-        extracted_text = extract_upload_text(payload, suffix)
         document_id = f"doc_{uuid4().hex[:12]}"
         version_id = f"ver_{uuid4().hex[:12]}"
         job_id = f"job_{uuid4().hex[:12]}"
@@ -305,7 +309,7 @@ async def upload_documents(
             mime_type=file.content_type or "application/octet-stream",
             size_bytes=len(payload),
             status="processing",
-            fidelity_tier="ocr_dependent" if suffix in {"png", "jpg", "jpeg"} else "structural",
+            fidelity_tier="ocr_dependent" if suffix in {"png", "jpg", "jpeg", "webp", "tiff", "tif", "bmp"} else "structural",
             pages=1,
             category="New upload",
             current_version_id=version_id,
@@ -324,13 +328,15 @@ async def upload_documents(
         runtime.data_root.joinpath("documents", document_id).mkdir(parents=True, exist_ok=True)
         runtime.data_root.joinpath("documents", document_id, document.name).write_bytes(payload)
         repo.add_document(document, job)
-        background_tasks.add_task(process_ingest, repo, rag, document_id, job_id, extracted_text)
+        # Parsing (including OCR) is deferred entirely to the background task
+        # so a large scanned upload never blocks the HTTP response.
+        background_tasks.add_task(process_ingest, repo, rag, runtime, document_id, job_id, payload, suffix)
         items.append(UploadItem(document=document, ingest_job_id=job_id))
     return UploadResponse(items=items)
 
 
 @app.get(f"{settings.api_prefix}/documents/{{document_id}}/status", response_model=IngestJob)
-async def document_status(document_id: str, repo: Annotated[DocumentRepository, Depends(get_repository)]) -> IngestJob:
+async def document_status(document_id: str, repo: Annotated[AnyRepository, Depends(get_repository)]) -> IngestJob:
     jobs = [job for job in repo.jobs.values() if job.document_id == document_id]
     if not jobs:
         raise DuckDocsError("not_found", "Ingest job was not found.", 404)
@@ -338,7 +344,7 @@ async def document_status(document_id: str, repo: Annotated[DocumentRepository, 
 
 
 @app.get(f"{settings.api_prefix}/ingest-jobs", response_model=list[IngestJob])
-async def list_jobs(repo: Annotated[DocumentRepository, Depends(get_repository)]) -> list[IngestJob]:
+async def list_jobs(repo: Annotated[AnyRepository, Depends(get_repository)]) -> list[IngestJob]:
     return list(repo.jobs.values())
 
 
@@ -387,7 +393,7 @@ async def ask_stream(
 
 
 @app.get(f"{settings.api_prefix}/evidence/{{evidence_id}}")
-async def get_evidence(evidence_id: str, repo: Annotated[DocumentRepository, Depends(get_repository)]) -> object:
+async def get_evidence(evidence_id: str, repo: Annotated[AnyRepository, Depends(get_repository)]) -> object:
     item = repo.evidence.get(evidence_id)
     if item is None:
         raise DuckDocsError("not_found", "Evidence was not found.", 404)
@@ -504,7 +510,7 @@ async def test_provider_config(
 
 
 @app.get(f"{settings.api_prefix}/ingest-jobs/stream")
-async def job_stream(repo: Annotated[DocumentRepository, Depends(get_repository)]) -> StreamingResponse:
+async def job_stream(repo: Annotated[AnyRepository, Depends(get_repository)]) -> StreamingResponse:
     async def events() -> AsyncIterator[str]:
         for job in repo.jobs.values():
             yield f"event: job_update\ndata: {job.model_dump_json()}\n\n"
