@@ -16,7 +16,7 @@ def utc_now() -> datetime:
 
 DocumentState = Literal["ready", "processing", "review", "failed"]
 JobState = Literal["queued", "processing", "ready", "failed", "cancelled"]
-FidelityTier = Literal["full_layout", "structural", "ocr_dependent"]
+FidelityTier = Literal["full_layout", "structural", "ocr_dependent", "best_effort"]
 Relevance = Literal["High", "Medium", "Low"]
 
 
@@ -34,6 +34,11 @@ class Evidence(BaseModel):
     retrieval_score: float = Field(ge=0, le=1)
     relevance: Relevance
     anchor_quality: Literal["line", "paragraph", "bbox", "cell"] = "line"
+    fidelity_tier: FidelityTier = "full_layout"
+    ocr_confidence: float | None = Field(default=None, ge=0, le=1)
+    ocr_engine: str | None = None
+    # Normalized page-relative box (x, y, width, height), top-left origin.
+    bbox: tuple[float, float, float, float] | None = None
 
 
 class Document(BaseModel):

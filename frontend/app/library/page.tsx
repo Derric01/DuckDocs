@@ -1,5 +1,5 @@
-import DuckDocsApp from '@/components/shell/duckdocs-app';
+import { WorkspacePage } from '@/components/workspace/workspace-page';
 
-export default function LibraryPage() {
-  return <DuckDocsApp initialSurface="library" />;
+export default function Page() {
+  return <WorkspacePage surface="library" />;
 }

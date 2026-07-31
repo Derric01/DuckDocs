@@ -16,6 +16,13 @@ dependencies = [
   "chromadb==0.5.23",
   "sqlalchemy==2.0.36",
   "psycopg[binary]==3.2.3",
+  "pymupdf==1.25.1",
+  "paddlepaddle==3.0.0",
+  "paddleocr==3.7.0",
+  "pytesseract==0.3.13",
+  "pillow==11.1.0",
+  "openpyxl==3.1.5",
+  "python-pptx==1.0.2",
 ]
 
 [project.optional-dependencies]
@@ -40,6 +47,10 @@ ignore = ["E501"]
 [tool.mypy]
 strict = true
 python_version = "3.12"
+
+[[tool.mypy.overrides]]
+module = ["fitz", "pytesseract", "openpyxl", "pptx", "paddleocr", "numpy"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"

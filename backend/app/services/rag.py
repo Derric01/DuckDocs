@@ -11,7 +11,7 @@ from uuid import uuid4
 from app.core.config import Settings
 from app.domain.models import Citation, GroundedResponse, SearchScope, utc_now
 from app.providers.registry import ProviderRegistry
-from app.repositories.memory import DocumentRepository
+from app.repositories import AnyRepository
 from app.services.vector_store import RetrievedChunk, VectorStore
 
 CITATION_RE = re.compile(r"\[chunk:([^\]]+)\]")
@@ -111,7 +111,7 @@ class RagService:
     def __init__(
         self,
         settings: Settings,
-        repository: DocumentRepository,
+        repository: AnyRepository,
         registry: ProviderRegistry,
         vector_store: VectorStore,
     ) -> None:
@@ -251,8 +251,11 @@ class RagService:
 
         citations = self._bind_citations(gate.cited_ids, chunks)
         confidence = score_confidence(chunks, gate.cited_ids)
+        # Removing inline [chunk:id] markers leaves the whitespace that
+        # preceded them, which otherwise shows up as "... 18 months ."
         cleaned = CITATION_RE.sub("", gate.text)
-        cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+        cleaned = re.sub(r"\s{2,}", " ", cleaned)
+        cleaned = re.sub(r"\s+([.,;:!?])", r"\1", cleaned).strip()
         return GroundedResponse(
             id=response_id,
             kind="ask",

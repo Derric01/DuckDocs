@@ -101,7 +101,8 @@ class OllamaChatAdapter:
         )
         try:
             with urllib.request.urlopen(request, timeout=120) as response:
-                return json.loads(response.read().decode("utf-8"))
+                body: dict[str, Any] = json.loads(response.read().decode("utf-8"))
+                return body
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"Ollama {error.code} for model '{self.model_name}': {detail}") from error
@@ -146,7 +147,8 @@ class OllamaEmbeddingAdapter:
         )
         try:
             with urllib.request.urlopen(request, timeout=120) as response:
-                return json.loads(response.read().decode("utf-8"))
+                body: dict[str, Any] = json.loads(response.read().decode("utf-8"))
+                return body
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"Ollama {error.code} for model '{self.model_name}': {detail}") from error
