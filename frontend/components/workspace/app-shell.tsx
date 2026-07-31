@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { IconButton, Kbd } from '@/components/ui';
 import { CommandPalette } from '@/components/workspace/command-palette';
 import { EvidencePanel } from '@/components/workspace/evidence-panel';
+import { ResizeHandle, usePanelWidth } from '@/components/workspace/resize-handle';
 import { useWorkspace, type ConnectionState } from '@/components/workspace/workspace-provider';
 import type { Surface } from '@/lib/types';
 
@@ -48,6 +49,7 @@ export function AppShell({ surface, children }: { surface: Surface; children: Re
   const [navOpen, setNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [panelWidth, setPanelWidth] = usePanelWidth();
 
   // Close the mobile drawer on navigation so it never lingers over the
   // surface the user just moved to.
@@ -176,13 +178,18 @@ export function AppShell({ surface, children }: { surface: Surface; children: Re
             {children}
           </main>
           {showPanel && panelOpen ? (
-            <EvidencePanel
-              evidence={evidence}
-              onClose={() => {
-                setPanelOpen(false);
-                selectEvidence(null);
-              }}
-            />
+            <>
+              <ResizeHandle width={panelWidth} onResize={setPanelWidth} />
+              <div className="panel-slot" style={{ '--panel-width': `${panelWidth}px` } as React.CSSProperties}>
+                <EvidencePanel
+                  evidence={evidence}
+                  onClose={() => {
+                    setPanelOpen(false);
+                    selectEvidence(null);
+                  }}
+                />
+              </div>
+            </>
           ) : null}
         </div>
       </div>

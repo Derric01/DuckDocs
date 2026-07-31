@@ -1,8 +1,9 @@
 'use client';
 
 import { AlertTriangle, ArrowUp, Copy, FileText, LockKeyhole, Paperclip } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { EmptyState, useToast } from '@/components/ui';
+import { CitationList } from '@/components/workspace/citations';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
 import type { EvidenceRecord, MessageRecord } from '@/lib/types';
 
@@ -15,9 +16,18 @@ const SUGGESTIONS = [
   'List the open obligations',
 ];
 
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 export function AskSurface() {
-  const { messages, asking, ask, documents, uploadDocuments, selectEvidence, connection } = useWorkspace();
+  const { messages, asking, ask, documents, uploadDocuments, selectEvidence, evidence, connection } =
+    useWorkspace();
   const { notify } = useToast();
+
+  // Stable identity so memoized turns don't re-render on every keystroke.
+  const handleCopy = useCallback(() => notify('Copied to clipboard'), [notify]);
 
   const [question, setQuestion] = useState('');
   const [dragging, setDragging] = useState(false);
@@ -26,10 +36,17 @@ export function AskSurface() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Follow the conversation as turns arrive.
+  /**
+   * Follow the conversation as turns arrive — but only when the user is
+   * already near the bottom. Yanking the view down while they are reading an
+   * earlier answer is the single most disruptive thing a chat surface can do.
+   */
   useEffect(() => {
     const node = scrollRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
+    if (!node) return;
+    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+    if (distanceFromBottom > 240) return;
+    node.scrollTo({ top: node.scrollHeight, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   }, [messages.length, asking]);
 
   // Grow the composer with its content, up to the CSS max-height.
@@ -44,6 +61,8 @@ export function AskSurface() {
     const trimmed = question.trim();
     if (!trimmed || asking) return;
     setQuestion('');
+    // Keep the caret in the composer so a follow-up question needs no click.
+    textareaRef.current?.focus();
     void ask(trimmed);
   };
 
@@ -78,7 +97,13 @@ export function AskSurface() {
             />
           ) : (
             messages.map((message) => (
-              <Turn key={message.id} message={message} onCitation={selectEvidence} onCopy={() => notify('Copied')} />
+              <Turn
+                key={message.id}
+                message={message}
+                activeEvidenceId={evidence?.id ?? null}
+                onCitation={selectEvidence}
+                onCopy={handleCopy}
+              />
             ))
           )}
 
@@ -185,12 +210,18 @@ export function AskSurface() {
   );
 }
 
-function Turn({
+/**
+ * Memoized: a long thread re-renders every turn on each keystroke in the
+ * composer otherwise, and citation grouping is not free.
+ */
+const Turn = memo(function Turn({
   message,
+  activeEvidenceId,
   onCitation,
   onCopy,
 }: {
   message: MessageRecord;
+  activeEvidenceId: string | null;
   onCitation: (evidence: EvidenceRecord) => void;
   onCopy: () => void;
 }) {
@@ -227,22 +258,7 @@ function Turn({
       )}
 
       {message.citations && message.citations.length > 0 ? (
-        <div className="citation-list">
-          {message.citations.map((citation, index) => (
-            <button
-              key={citation.id}
-              className="citation-source"
-              onClick={() => onCitation(citation)}
-              aria-label={`Open citation ${index + 1} from ${citation.documentName}, page ${citation.page}`}
-            >
-              <span className="ord" aria-hidden="true">
-                {index + 1}
-              </span>
-              <span className="name">{citation.documentName}</span>
-              <span className="mono">p{citation.page}</span>
-            </button>
-          ))}
-        </div>
+        <CitationList citations={message.citations} activeId={activeEvidenceId} onSelect={onCitation} />
       ) : null}
 
       {!errored ? (
@@ -261,4 +277,4 @@ function Turn({
       ) : null}
     </article>
   );
-}
+});

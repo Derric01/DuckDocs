@@ -122,6 +122,35 @@ def parse_upload(
     return None
 
 
+def probe_page_count(payload: bytes, suffix: str) -> int:
+    """How many pages the file structurally has, regardless of extraction.
+
+    Page count is a property of the file, not of whether text extraction
+    succeeded. Deriving it from parse output means a scanned document whose
+    OCR returned nothing reports one page and cannot be paged through in the
+    preview -- exactly when a user most needs to look at the real page.
+    """
+    if suffix == "pdf" and fitz is not None:
+        try:
+            document = fitz.open(stream=payload, filetype="pdf")
+        except Exception:
+            return 1
+        try:
+            return max(1, int(document.page_count))
+        finally:
+            document.close()
+
+    if suffix in IMAGE_EXTENSIONS and Image is not None:
+        try:
+            image = Image.open(io.BytesIO(payload))
+            image.load()
+            return max(1, int(getattr(image, "n_frames", 1) or 1))
+        except Exception:
+            return 1
+
+    return 1
+
+
 def _has_min_alnum(text: str, minimum: int = 20) -> bool:
     return len(re.findall(r"[A-Za-z0-9]", text)) >= minimum
 

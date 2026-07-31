@@ -48,7 +48,14 @@ from app.repositories import AnyRepository
 from app.repositories.sql import build_repository
 from app.services.chunking import AnchorQuality, chunk_document
 from app.services.ocr import build_engine
-from app.services.parsing import SUPPORTED_EXTENSIONS, ParsedDocument, parse_upload
+from app.services.parsing import (
+    IMAGE_EXTENSIONS,
+    SUPPORTED_EXTENSIONS,
+    ParsedDocument,
+    parse_upload,
+    probe_page_count,
+)
+from app.services.preview import render_image_page, render_pdf_page
 from app.services.rag import RagService
 from app.services.vector_store import VectorStore
 
@@ -270,11 +277,16 @@ async def process_ingest(
         repo.update_job(job_id, status="processing", stage="indexing", progress_pct=92)
         await asyncio.to_thread(rag.index_document, document_id)
 
+    # Keep the larger of the probed and parsed counts: a parser may skip pages
+    # it found nothing on, but those pages still exist and are still previewable.
+    existing = repo.get_document(document_id)
+    page_count = max(parsed.page_count, existing.pages if existing else 1)
+
     repo.update_document(
         document_id,
         status="ready" if indexed_count else "review",
         fidelity_tier=parsed.fidelity_tier,
-        pages=parsed.page_count,
+        pages=page_count,
     )
     repo.update_job(job_id, status="ready", stage="ready", progress_pct=100)
 
@@ -313,8 +325,10 @@ async def upload_documents(
             mime_type=file.content_type or "application/octet-stream",
             size_bytes=len(payload),
             status="processing",
-            fidelity_tier="ocr_dependent" if suffix in {"png", "jpg", "jpeg", "webp", "tiff", "tif", "bmp"} else "structural",
-            pages=1,
+            fidelity_tier="ocr_dependent" if suffix in IMAGE_EXTENSIONS else "structural",
+            # Structural page count, so the preview can page through the file
+            # even if extraction later yields nothing.
+            pages=probe_page_count(payload, suffix),
             category="New upload",
             current_version_id=version_id,
             created_at=now,
@@ -402,6 +416,56 @@ async def get_evidence(evidence_id: str, repo: Annotated[AnyRepository, Depends(
     if item is None:
         raise DuckDocsError("not_found", "Evidence was not found.", 404)
     return item
+
+
+@app.get(f"{settings.api_prefix}/documents/{{document_id}}/pages/{{page}}/image")
+async def document_page_image(
+    document_id: str,
+    page: int,
+    repo: Annotated[AnyRepository, Depends(get_repository)],
+    runtime: Annotated[Settings, Depends(get_runtime_settings)],
+    dpi: int = Query(default=144, ge=48, le=400),
+) -> Response:
+    """Rasterized page image for the preview panel.
+
+    Only PDF and image formats have a page-image concept; other formats
+    return 404 with a stable reason code so the frontend can fall back to
+    the text passage view instead of showing a broken image.
+    """
+    document = repo.get_document(document_id)
+    if document is None:
+        raise DuckDocsError("not_found", "Document was not found.", 404)
+    if page < 1 or page > document.pages:
+        raise DuckDocsError("not_found", f"Page {page} is out of range for this document.", 404)
+
+    file_path = runtime.data_root / "documents" / document_id / document.name
+    if not file_path.exists():
+        raise DuckDocsError("not_found", "The stored file for this document is missing.", 404)
+
+    suffix = document.file_type
+    payload = await asyncio.to_thread(file_path.read_bytes)
+
+    image_bytes: bytes | None = None
+    if suffix == "pdf":
+        image_bytes = await asyncio.to_thread(render_pdf_page, payload, page, dpi)
+    elif suffix in IMAGE_EXTENSIONS:
+        image_bytes = await asyncio.to_thread(render_image_page, payload, page)
+    else:
+        raise DuckDocsError(
+            "preview_unavailable",
+            f".{suffix} files do not have a page preview.",
+            404,
+            "View the extracted passage in the evidence panel instead.",
+        )
+
+    if image_bytes is None:
+        raise DuckDocsError("preview_unavailable", "This page could not be rendered.", 404)
+
+    return Response(
+        content=image_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @app.get(f"{settings.api_prefix}/providers", response_model=list[Provider])

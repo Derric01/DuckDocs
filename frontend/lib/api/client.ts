@@ -335,6 +335,14 @@ export const duckDocsApi = {
     });
     return mapProviderConfig(response);
   },
+  /**
+   * URL for a rendered page image. Not fetched through `request()` because the
+   * browser loads it directly via <img>, which gets caching and progressive
+   * decode for free.
+   */
+  pageImageUrl: (documentId: string, page: number, dpi = 144) =>
+    `${apiBaseUrl}/documents/${encodeURIComponent(documentId)}/pages/${page}/image?dpi=${dpi}`,
+
   testProviderConfig: async (id: string) =>
     request<{ reachable: boolean; latency_ms: number | null; error: string | null }>(`/settings/providers/${id}/test`, {
       method: 'POST',
