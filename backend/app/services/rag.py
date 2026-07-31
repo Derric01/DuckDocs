@@ -251,8 +251,11 @@ class RagService:
 
         citations = self._bind_citations(gate.cited_ids, chunks)
         confidence = score_confidence(chunks, gate.cited_ids)
+        # Removing inline [chunk:id] markers leaves the whitespace that
+        # preceded them, which otherwise shows up as "... 18 months ."
         cleaned = CITATION_RE.sub("", gate.text)
-        cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+        cleaned = re.sub(r"\s{2,}", " ", cleaned)
+        cleaned = re.sub(r"\s+([.,;:!?])", r"\1", cleaned).strip()
         return GroundedResponse(
             id=response_id,
             kind="ask",

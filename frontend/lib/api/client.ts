@@ -1,4 +1,4 @@
-import type { AnchorQuality, DocumentRecord, EvidenceRecord, FidelityLabel } from '@/lib/types';
+import type { BBox, DocumentRecord, EvidenceRecord, FidelityLabel } from '@/lib/types';
 
 export interface ApiErrorShape {
   error: {
@@ -52,9 +52,19 @@ interface ApiEvidence {
   snippet: string;
   retrieval_score: number;
   relevance: EvidenceRecord['relevance'];
-  anchor_quality: AnchorQuality;
+  anchor_quality: NonNullable<EvidenceRecord['anchorQuality']>;
   fidelity_tier: ApiDocument['fidelity_tier'];
   ocr_confidence: number | null;
+  ocr_engine: string | null;
+  bbox: BBox | null;
+}
+
+interface ApiIngestJob {
+  id: string;
+  document_id: string;
+  status: string;
+  stage: string;
+  progress_pct: number;
 }
 
 interface ApiUploadResponse {
@@ -133,6 +143,8 @@ function mapEvidence(evidence: ApiEvidence): EvidenceRecord {
     fidelity: mapFidelity(evidence.fidelity_tier),
     anchorQuality: evidence.anchor_quality,
     ocrConfidence: evidence.ocr_confidence,
+    ocrEngine: evidence.ocr_engine,
+    bbox: evidence.bbox,
   };
 }
 
@@ -221,9 +233,34 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const duckDocsApi = {
+  /**
+   * Documents joined with their live ingest job, so a row can show real
+   * stage and progress while OCR is still running rather than a bare
+   * "Processing" label. A failed job lookup degrades to plain documents.
+   */
   listDocuments: async () => {
     const response = await request<{ items: ApiDocument[]; has_more: boolean }>('/documents');
-    return { ...response, items: response.items.map(mapDocument) };
+    const documents = response.items.map(mapDocument);
+
+    if (!documents.some((document) => document.status === 'processing')) {
+      return { ...response, items: documents };
+    }
+
+    try {
+      const jobs = await request<ApiIngestJob[]>('/ingest-jobs');
+      const latest = new Map<string, ApiIngestJob>();
+      for (const job of jobs) latest.set(job.document_id, job);
+      return {
+        ...response,
+        items: documents.map((document) => {
+          const job = latest.get(document.id);
+          if (!job || document.status !== 'processing') return document;
+          return { ...document, progress: job.progress_pct, stage: job.stage };
+        }),
+      };
+    } catch {
+      return { ...response, items: documents };
+    }
   },
   getEvidence: async (id: string) => mapEvidence(await request<ApiEvidence>(`/evidence/${id}`)),
   search: async (query: string) => {

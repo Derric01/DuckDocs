@@ -1,236 +1,143 @@
+import { ArrowRight, FileSearch, LockKeyhole, ScanText, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
-import {
-  ArrowRight,
-  FileSearch,
-  FolderOpen,
-  LockKeyhole,
-  MessageSquareQuote,
-  Scale,
-  Settings2,
-  ShieldCheck,
-  Sparkles,
-} from 'lucide-react';
 
-const surfaces = [
+const PILLARS = [
   {
-    href: '/library',
-    title: 'Library',
-    body: 'Upload PDFs, Office files, text, and more. DuckDocs indexes pages locally and tracks ingestion status.',
-    icon: FolderOpen,
+    icon: FileSearch,
+    title: 'Evidence is an object',
+    body: 'Every claim in an answer carries a citation that opens the exact passage it came from — page, lines, and confidence included.',
   },
   {
-    href: '/intelligence',
-    title: 'Intelligence',
-    body: 'Ask grounded questions. Answers must cite retrieved passages or refuse when evidence is missing.',
-    icon: MessageSquareQuote,
+    icon: LockKeyhole,
+    title: 'Local by default',
+    body: 'Documents, the search index, and OCR all run on this machine. No account, no telemetry, no background uploads.',
   },
   {
-    href: '/review',
-    title: 'Review',
-    body: 'Inspect citations, compare versions, and keep annotation work next to the source passage.',
-    icon: Scale,
-  },
-  {
-    href: '/settings',
-    title: 'Settings',
-    body: 'Choose local Ollama models or optional remote providers. Secrets stay on this machine.',
-    icon: Settings2,
+    icon: ScanText,
+    title: 'Scans are first-class',
+    body: 'Scanned PDFs and photographed pages are recognized on-device with no page cap, and low-confidence text is labeled rather than hidden.',
   },
 ];
 
-const flow = [
-  {
-    title: 'Ingest',
-    body: 'Documents are parsed, chunked, and indexed with page and line anchors so every hit stays traceable.',
-  },
-  {
-    title: 'Retrieve',
-    body: 'Questions search by meaning against your local vector index, with keyword fallback when models are offline.',
-  },
-  {
-    title: 'Generate',
-    body: 'A chat model drafts only from retrieved context. It is never treated as the source of truth.',
-  },
-  {
-    title: 'Ground',
-    body: 'The grounding gate checks citations against supplied evidence. Unsupported claims become a clear refusal.',
-  },
+const STEPS = [
+  { title: 'Ingest', body: 'Files are parsed page by page. Anything without a text layer is sent through local OCR.' },
+  { title: 'Retrieve', body: 'Questions search by meaning against a local index, with keyword fallback when no model is running.' },
+  { title: 'Ground', body: 'A model drafts only from retrieved passages. Unsupported claims are refused, not smoothed over.' },
+  { title: 'Verify', body: 'Open any citation to read the source passage and judge it yourself.' },
 ];
 
 export default function LandingPage() {
   return (
     <main className="landing">
-      <div className="landing-atmosphere" aria-hidden="true" />
-
-      <header className="landing-top glass-panel">
-        <div className="landing-brand" aria-label="DuckDocs">
-          <span className="brand-mark">D</span>
-          <div className="landing-brand-copy">
-            <span className="landing-brand-name">DuckDocs</span>
-            <span className="landing-brand-tag">Local evidence workspace</span>
-          </div>
-        </div>
-        <nav className="landing-top-nav" aria-label="Landing">
+      <header className="landing-nav">
+        <Link href="/" className="brand">
+          <span className="brand-mark" aria-hidden="true">
+            D
+          </span>
+          <span>
+            <span className="brand-name">DuckDocs</span>
+          </span>
+        </Link>
+        <nav className="landing-nav-links" aria-label="Sections">
+          <a href="#principles">Principles</a>
           <a href="#how">How it works</a>
-          <a href="#surfaces">Workspace</a>
-          <a href="#privacy">Privacy</a>
-          <Link className="button button-primary landing-cta-compact" href="/intelligence">
+          <Link className="btn btn-primary btn-sm" href="/intelligence">
             Open workspace
-            <ArrowRight size={14} strokeWidth={1.8} aria-hidden="true" />
           </Link>
         </nav>
       </header>
 
-      <section className="landing-hero">
-        <div className="landing-copy">
-          <h1>DuckDocs</h1>
-          <p className="landing-lede">
-            A private document intelligence workspace. Search and ask against your own library, then verify every answer
-            against the exact passage it came from.
-          </p>
-          <div className="landing-actions">
-            <Link className="button button-primary landing-cta" href="/intelligence">
-              Open workspace
-              <ArrowRight size={15} strokeWidth={1.8} aria-hidden="true" />
-            </Link>
-            <Link className="button button-secondary landing-cta glass-chip" href="/library">
-              Add documents
-            </Link>
-          </div>
-          <p className="landing-boundary" role="note">
-            <LockKeyhole size={14} strokeWidth={1.8} aria-hidden="true" />
-            <span>Local by default. Nothing leaves this machine unless you configure a provider.</span>
-          </p>
+      <section className="landing-inner hero">
+        <h1>Answers you can trace back to the page they came from</h1>
+        <p className="hero-lede">
+          DuckDocs turns your own documents into a private, searchable workspace. Ask a question in plain language and
+          get an answer that cites its sources — or an honest refusal when the evidence is not there.
+        </p>
+        <div className="hero-actions">
+          <Link className="btn btn-primary btn-lg" href="/intelligence">
+            Open workspace
+            <ArrowRight size={15} strokeWidth={1.8} aria-hidden="true" />
+          </Link>
+          <Link className="btn btn-secondary btn-lg" href="/library">
+            Add documents
+          </Link>
         </div>
+        <p className="hero-note">
+          <LockKeyhole size={13} strokeWidth={1.8} aria-hidden="true" />
+          Runs entirely on your machine
+        </p>
 
-        <aside className="landing-preview glass-panel" aria-label="Grounded answer preview">
-          <div className="landing-preview-head">
-            <span className="pane-kicker">Evidence object</span>
-            <span className="landing-preview-status">
-              <span className="live-indicator" />
-              Grounded
+        <div className="hero-preview">
+          <div className="hero-preview-head">
+            <span className="kicker">Grounded answer</span>
+            <span className="badge badge-success">
+              <ShieldCheck size={11} strokeWidth={2} aria-hidden="true" />
+              Cited
             </span>
           </div>
-          <div className="landing-preview-source">
-            <strong>retention-policy.md</strong>
-            <span className="mono">Page 02 · Lines 18-24</span>
+          <div className="hero-preview-body">
+            <p className="hero-preview-answer">
+              Records must remain on the local machine for 18 months before archival review.
+              <span className="citation-chip" aria-hidden="true">
+                1
+              </span>
+            </p>
+            <div className="citation-list">
+              <span className="citation-source">
+                <span className="ord" aria-hidden="true">
+                  1
+                </span>
+                <span className="name">retention-policy.pdf</span>
+                <span className="mono">p2 · 94%</span>
+              </span>
+            </div>
           </div>
-          <blockquote className="landing-preview-quote">
-            Falcon records must stay on the local machine for 18 months before archival review.
-          </blockquote>
-          <div className="landing-preview-meta">
-            <span>
-              <ShieldCheck size={13} strokeWidth={1.8} aria-hidden="true" />
-              Citation locked to source
-            </span>
-            <span className="mono">ev_falcon_02</span>
-          </div>
-        </aside>
-      </section>
-
-      <section className="landing-section" id="why">
-        <div className="landing-section-inner">
-          <h2>Built for serious document work</h2>
-          <p className="landing-section-lede">
-            Folders, email attachments, scans, and policy drafts rarely live in one searchable system. Cloud AI tools
-            answer fluently but hide provenance, or send sensitive files off-machine. DuckDocs closes that gap: one local
-            library, meaning-aware retrieval, and answers you can audit.
-          </p>
-          <ul className="landing-pillars">
-            <li className="glass-panel">
-              <FileSearch size={18} strokeWidth={1.7} aria-hidden="true" />
-              <strong>Evidence is an object</strong>
-              <span>Every generated answer exposes a path to its source. Citations open the inspector at the anchor.</span>
-            </li>
-            <li className="glass-panel">
-              <LockKeyhole size={18} strokeWidth={1.7} aria-hidden="true" />
-              <strong>Local-first is visible</strong>
-              <span>The product tells you what leaves the machine. The default path needs no account and no cloud.</span>
-            </li>
-            <li className="glass-panel">
-              <Sparkles size={18} strokeWidth={1.7} aria-hidden="true" />
-              <strong>Models are assistants</strong>
-              <span>Providers are swappable. The model drafts; the grounding gate decides what you see.</span>
-            </li>
-          </ul>
         </div>
       </section>
 
-      <section className="landing-section" id="how">
-        <div className="landing-section-inner">
-          <h2>How a question becomes a grounded answer</h2>
-          <p className="landing-section-lede">
-            DuckDocs is not a chat wrapper around PDFs. Ingestion, retrieval, generation, and provenance are first-class
-            stages with a single mandatory checkpoint.
+      <section className="landing-section" id="principles">
+        <div className="landing-inner">
+          <h2>Built for documents you actually have to trust</h2>
+          <p>
+            Cloud assistants answer fluently but hide where the answer came from, and they want your files. DuckDocs
+            closes that gap: one local library, retrieval you can audit, and uncertainty stated plainly.
           </p>
-          <ol className="landing-flow">
-            {flow.map((step) => (
-              <li key={step.title} className="glass-panel">
-                <strong>{step.title}</strong>
-                <span>{step.body}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-
-      <section className="landing-section" id="surfaces">
-        <div className="landing-section-inner">
-          <h2>Four surfaces, one workflow</h2>
-          <p className="landing-section-lede">
-            Ask, inspect, annotate, compare, and export stay connected. Conversation should lead to action, not a dead-end
-            chat transcript.
-          </p>
-          <div className="landing-surfaces">
-            {surfaces.map((surface) => {
-              const Icon = surface.icon;
+          <div className="feature-grid">
+            {PILLARS.map((pillar) => {
+              const Icon = pillar.icon;
               return (
-                <Link key={surface.href} href={surface.href} className="landing-surface glass-panel">
+                <article className="feature" key={pillar.title}>
                   <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
-                  <strong>{surface.title}</strong>
-                  <span>{surface.body}</span>
-                  <em>
-                    Open {surface.title}
-                    <ArrowRight size={13} strokeWidth={1.8} aria-hidden="true" />
-                  </em>
-                </Link>
+                  <strong>{pillar.title}</strong>
+                  <p>{pillar.body}</p>
+                </article>
               );
             })}
           </div>
         </div>
       </section>
 
-      <section className="landing-section" id="privacy">
-        <div className="landing-section-inner landing-privacy glass-panel">
-          <div>
-            <h2>Who it is for</h2>
-            <p>
-              Consultants, researchers, policy analysts, legal and compliance teams, engineers, and anyone who needs a
-              private library with verifiable answers. Density is for daily experts; honesty is for trust.
-            </p>
-          </div>
-          <div>
-            <h2>What runs locally</h2>
-            <p>
-              The default stack is FastAPI, Postgres metadata, Chroma retrieval, and Ollama models on your machine. Cloud
-              providers are optional and explicit. Honest states cover loading, low confidence, refusal, and provider
-              failure.
-            </p>
+      <section className="landing-section" id="how">
+        <div className="landing-inner">
+          <h2>How a question becomes a grounded answer</h2>
+          <p>Four stages, with a mandatory checkpoint before anything reaches you.</p>
+          <div className="step-grid">
+            {STEPS.map((step) => (
+              <article className="step" key={step.title}>
+                <strong>{step.title}</strong>
+                <p>{step.body}</p>
+              </article>
+            ))}
           </div>
         </div>
       </section>
 
-      <footer className="landing-footer">
-        <div className="landing-footer-inner">
-          <div>
-            <strong>DuckDocs</strong>
-            <p>Private, evidence-aware document intelligence.</p>
-          </div>
-          <Link className="button button-primary landing-cta" href="/intelligence">
-            Enter workspace
-            <ArrowRight size={15} strokeWidth={1.8} aria-hidden="true" />
-          </Link>
-        </div>
+      <footer className="landing-inner landing-foot">
+        <span>DuckDocs — private, evidence-aware document intelligence.</span>
+        <Link className="btn btn-secondary btn-sm" href="/intelligence">
+          Open workspace
+          <ArrowRight size={13} strokeWidth={1.8} aria-hidden="true" />
+        </Link>
       </footer>
     </main>
   );

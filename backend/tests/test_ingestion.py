@@ -299,3 +299,24 @@ def test_unsupported_extension_is_rejected_at_upload(tmp_path: Path) -> None:
         assert upload.status_code == 415
 
     app.dependency_overrides.clear()
+
+
+def test_citation_stripping_does_not_leave_space_before_punctuation(tmp_path: Path) -> None:
+    """Removing inline [chunk:id] markers must not leave "... months ." """
+    with client_with_data_root(tmp_path) as client:
+        client.post(
+            "/api/v1/documents",
+            files={
+                "files": (
+                    "policy.md",
+                    b"Retention policy\n\nFalcon records stay local for 18 months before archival review.",
+                    "text/markdown",
+                )
+            },
+        )
+        answer = client.post("/api/v1/ask", json={"query": "How long do Falcon records stay local?"}).json()
+        if answer["grounded"]:
+            assert " ." not in answer["answer"]
+            assert " ," not in answer["answer"]
+
+    app.dependency_overrides.clear()

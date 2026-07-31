@@ -1074,9 +1074,9 @@ h3 { font-size: var(--text-body); }
 
 .hero { padding: var(--space-20) 0 var(--space-16); text-align: center; }
 .hero h1 {
-  max-width: 18ch; margin: 0 auto var(--space-5);
-  font-size: clamp(2rem, 5vw, 3.25rem); line-height: 1.08;
-  letter-spacing: -0.03em;
+  max-width: 24ch; margin: 0 auto var(--space-5);
+  font-size: clamp(2rem, 4.4vw, 3rem); line-height: 1.1;
+  letter-spacing: -0.03em; text-wrap: balance;
 }
 .hero-lede {
   max-width: 60ch; margin: 0 auto var(--space-8);
@@ -1184,6 +1184,10 @@ h3 { font-size: var(--text-body); }
   .doc-row .doc-name { grid-area: name; }
   .doc-row .doc-status { grid-area: status; }
   .doc-row .doc-fidelity, .doc-row .doc-updated, .doc-row .doc-chevron { display: none; }
+  /* Tabs and filter stack instead of overflowing the viewport. */
+  .toolbar { flex-direction: column; align-items: stretch; gap: var(--space-3); }
+  .tabs { overflow-x: auto; }
+  .surface-head-row { flex-direction: column; gap: var(--space-4); }
   .hero { padding: var(--space-12) 0 var(--space-10); }
   .landing-nav-links a { display: none; }
   .meta-grid { grid-template-columns: 1fr; }

@@ -16,8 +16,10 @@ Open `http://localhost:3000` for the entry page, then continue into the workspac
 
 ## Run the API locally
 
-Native PDF/image OCR requires the Tesseract binary on `PATH` (the Python
-packages `pymupdf`/`pytesseract`/`Pillow` alone are not enough):
+OCR runs through a pluggable engine. **PaddleOCR is the default** and needs no
+system package — it downloads its model weights once on first use, then runs
+fully offline. **Tesseract** is the fallback for machines that have never had
+network access, and needs its binary on `PATH`:
 
 ```powershell
 # Debian/Ubuntu
@@ -25,6 +27,9 @@ sudo apt-get install -y tesseract-ocr tesseract-ocr-eng
 # macOS
 brew install tesseract
 ```
+
+Select the engine with `DUCKDOCS_OCR_ENGINE=auto|paddleocr|tesseract`
+(`auto` prefers PaddleOCR and falls back rather than failing ingestion).
 
 ```powershell
 cd backend
@@ -83,8 +88,10 @@ Uploads are parsed for real, not stubbed:
 - **Images** (PNG, JPG, WEBP, TIFF, BMP) -- always OCR'd, including multi-frame TIFF.
 - **DOCX** -- paragraph/page-break-aware XML parsing. **XLSX** -- per-sheet, row/cell-aware. **PPTX** -- per-slide.
 - **CSV, HTML, TXT/MD, JSON/XML/YAML, and source code** -- direct structured/text extraction.
-- OCR runs on **every** page of a scanned document via a local Tesseract engine -- no page cap, no API key, no per-document quota, and no network call. Confidence is captured per page and never hidden: low-confidence OCR chunks are labeled in the evidence inspector rather than silently blended in as if they were clean text.
+- OCR runs on **every** page of a scanned document -- no page cap, no API key, no per-document quota. Scanned pages are recognized in batches (`DUCKDOCS_OCR_BATCH_SIZE`), so a long document amortizes model overhead instead of paying it per page.
+- Confidence and bounding boxes are captured per page and never hidden: low-confidence OCR is labeled in the evidence inspector rather than silently blended in as if it were clean text.
 - Every document and chunk carries an honest fidelity tier (`full_layout` / `structural` / `ocr_dependent`) so the UI never implies more precision than the parser actually delivered.
+- Languages are configured with `DUCKDOCS_OCR_LANGUAGES` (PaddleOCR codes are mapped from the Tesseract-style names automatically).
 
 ## Product guarantees
 

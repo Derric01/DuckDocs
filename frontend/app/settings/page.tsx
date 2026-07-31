@@ -1,5 +1,5 @@
-import DuckDocsApp from '@/components/shell/duckdocs-app';
+import { WorkspacePage } from '@/components/workspace/workspace-page';
 
-export default function SettingsPage() {
-  return <DuckDocsApp initialSurface="settings" />;
+export default function Page() {
+  return <WorkspacePage surface="settings" />;
 }
