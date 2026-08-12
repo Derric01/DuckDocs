@@ -22,11 +22,12 @@ import { useWorkspace, type ConnectionState } from '@/components/workspace/works
 import { cn } from '@/lib/utils';
 import type { Surface } from '@/lib/types';
 
-const NAV: Array<{ id: Surface; label: string; icon: LucideIcon }> = [
-  { id: 'intelligence', label: 'Ask', icon: MessageSquareText },
-  { id: 'library', label: 'Library', icon: LibraryBig },
-  { id: 'review', label: 'Review', icon: Highlighter },
-  { id: 'settings', label: 'Settings', icon: Settings2 },
+/** Each surface keeps one hue everywhere it appears, so colour teaches. */
+const NAV: Array<{ id: Surface; label: string; icon: LucideIcon; tile: string }> = [
+  { id: 'intelligence', label: 'Ask', icon: MessageSquareText, tile: 'bg-ios-blue' },
+  { id: 'library', label: 'Library', icon: LibraryBig, tile: 'bg-ios-teal' },
+  { id: 'review', label: 'Review', icon: Highlighter, tile: 'bg-ios-orange' },
+  { id: 'settings', label: 'Settings', icon: Settings2, tile: 'bg-ios-gray' },
 ];
 
 const TITLES: Record<Surface, string> = {
@@ -97,7 +98,7 @@ export function AppShell({ surface, children }: { surface: Surface; children: Re
         >
           <div className="px-4 pb-3 pt-4">
             <Link href="/" className="flex items-center gap-2.5 rounded-lg px-1 py-1">
-              <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-foreground text-xs font-bold text-background">
+              <span className="icon-tile size-7 bg-gradient-to-br from-ios-blue to-ios-indigo text-xs font-bold">
                 D
               </span>
               <span className="min-w-0">
@@ -135,7 +136,9 @@ export function AppShell({ surface, children }: { surface: Surface; children: Re
                           : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                       )}
                     >
-                      <Icon className="size-[17px] shrink-0" strokeWidth={active ? 2.1 : 1.8} aria-hidden />
+                      <span className={cn('icon-tile size-6', item.tile)}>
+                        <Icon className="size-[13px]" strokeWidth={2.4} aria-hidden />
+                      </span>
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
                       {item.id === 'library' && documents.length > 0 ? (
                         <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">

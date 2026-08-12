@@ -52,6 +52,18 @@
     --shadow-lg: 0 12px 32px rgba(15, 18, 26, 0.10), 0 2px 8px rgba(15, 18, 26, 0.05);
     --shadow-xl: 0 24px 64px rgba(15, 18, 26, 0.16), 0 4px 12px rgba(15, 18, 26, 0.07);
 
+    /* iOS system colours (light) */
+    --ios-red: 3 100% 59%;
+    --ios-orange: 28 100% 52%;
+    --ios-yellow: 42 100% 47%;
+    --ios-green: 142 71% 38%;
+    --ios-teal: 189 76% 43%;
+    --ios-blue: 211 100% 50%;
+    --ios-indigo: 240 60% 55%;
+    --ios-purple: 280 68% 55%;
+    --ios-pink: 341 90% 56%;
+    --ios-gray: 240 4% 52%;
+
     --material: 240 6% 97%;
     color-scheme: light;
   }
@@ -95,6 +107,18 @@
     --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.45);
     --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.75), 0 4px 12px rgba(0, 0, 0, 0.5);
+
+    /* iOS system colours (dark) — lifted so they hold on black */
+    --ios-red: 3 100% 66%;
+    --ios-orange: 28 100% 60%;
+    --ios-yellow: 42 100% 58%;
+    --ios-green: 142 62% 50%;
+    --ios-teal: 189 78% 55%;
+    --ios-blue: 211 100% 60%;
+    --ios-indigo: 240 70% 68%;
+    --ios-purple: 280 70% 68%;
+    --ios-pink: 341 95% 66%;
+    --ios-gray: 240 4% 60%;
 
     --material: 240 4% 8%;
     color-scheme: dark;
@@ -165,6 +189,14 @@
     .material {
       background-color: hsl(var(--material));
     }
+  }
+
+  /**
+   * Colour-coded icon tile, as on every iOS Settings row. The saturated fill
+   * with a white glyph is what makes those lists scannable at a glance.
+   */
+  .icon-tile {
+    @apply grid shrink-0 place-items-center rounded-[9px] text-white shadow-xs;
   }
 
   /** Inset grouped list, as in iOS Settings. */

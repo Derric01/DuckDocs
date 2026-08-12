@@ -58,6 +58,24 @@ const config: Config = {
           foreground: 'hsl(var(--destructive-foreground))',
           muted: 'hsl(var(--destructive-muted))',
         },
+        /**
+         * iOS system colours. Used for the icon tiles that identify a row's
+         * kind at a glance — the pattern iOS Settings is built on. Colour
+         * here is an index, not decoration: the same hue always means the
+         * same kind of thing.
+         */
+        ios: {
+          red: 'hsl(var(--ios-red))',
+          orange: 'hsl(var(--ios-orange))',
+          yellow: 'hsl(var(--ios-yellow))',
+          green: 'hsl(var(--ios-green))',
+          teal: 'hsl(var(--ios-teal))',
+          blue: 'hsl(var(--ios-blue))',
+          indigo: 'hsl(var(--ios-indigo))',
+          purple: 'hsl(var(--ios-purple))',
+          pink: 'hsl(var(--ios-pink))',
+          gray: 'hsl(var(--ios-gray))',
+        },
       },
       borderRadius: {
         // Apple runs larger than the web default; continuous-ish corners are

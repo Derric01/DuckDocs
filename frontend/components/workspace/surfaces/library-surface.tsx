@@ -8,6 +8,7 @@ import {
   FileImage,
   FileSpreadsheet,
   FileText,
+  FileType2,
   LoaderCircle,
   Search,
   Sparkles,
@@ -56,14 +57,22 @@ const STAGE_LABEL: Record<string, string> = {
   indexing: 'Indexing',
 };
 
-function iconFor(type: string): LucideIcon {
+/**
+ * Colour is an index, not decoration: a hue always means the same kind of
+ * file, so a long library becomes scannable without reading extensions.
+ */
+function kindFor(type: string): { icon: LucideIcon; tile: string } {
   const upper = type.toUpperCase();
-  if (['CSV', 'XLSX'].includes(upper)) return FileSpreadsheet;
-  if (['PNG', 'JPG', 'JPEG', 'WEBP', 'TIFF', 'TIF', 'BMP'].includes(upper)) return FileImage;
-  if (['TS', 'TSX', 'JS', 'JSX', 'PY', 'JSON', 'XML', 'YAML', 'YML', 'SQL', 'GO', 'RS'].includes(upper)) {
-    return FileCode2;
+  if (upper === 'PDF') return { icon: FileType2, tile: 'bg-ios-red' };
+  if (['CSV', 'XLSX'].includes(upper)) return { icon: FileSpreadsheet, tile: 'bg-ios-green' };
+  if (['PNG', 'JPG', 'JPEG', 'WEBP', 'TIFF', 'TIF', 'BMP'].includes(upper)) {
+    return { icon: FileImage, tile: 'bg-ios-purple' };
   }
-  return FileText;
+  if (['TS', 'TSX', 'JS', 'JSX', 'PY', 'JSON', 'XML', 'YAML', 'YML', 'SQL', 'GO', 'RS'].includes(upper)) {
+    return { icon: FileCode2, tile: 'bg-ios-indigo' };
+  }
+  if (['DOCX', 'PPTX'].includes(upper)) return { icon: FileText, tile: 'bg-ios-blue' };
+  return { icon: FileText, tile: 'bg-ios-gray' };
 }
 
 export function LibrarySurface() {
@@ -149,11 +158,16 @@ export function LibrarySurface() {
           dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-border-strong hover:bg-card',
         )}
       >
-        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground">
+        <span
+          className={cn(
+            'icon-tile size-11 transition-colors duration-200',
+            dragging ? 'bg-ios-blue' : 'bg-gradient-to-br from-ios-blue to-ios-indigo',
+          )}
+        >
           {uploading ? (
             <LoaderCircle className="size-5 animate-spin" />
           ) : (
-            <Upload className="size-5" strokeWidth={1.8} />
+            <Upload className="size-5" strokeWidth={2} />
           )}
         </span>
         <span className="min-w-0 flex-1">
@@ -216,11 +230,11 @@ export function LibrarySurface() {
       ) : visible.length === 0 ? (
         <EmptyState
           icon={documents.length ? Search : Upload}
-          title={documents.length ? 'No matching documents' : 'No documents yet'}
+          title={documents.length ? 'No matching documents' : 'Nothing here yet 📂'}
           description={
             documents.length
               ? 'Try a different name, or clear the current filter.'
-              : 'Add PDFs, Office files, images, or text. Scanned pages are recognized locally with OCR.'
+              : 'Add PDFs, Office files, images, or text. Scanned pages are recognized locally with OCR — no page limits.'
           }
           action={
             documents.length ? undefined : (
@@ -243,7 +257,7 @@ export function LibrarySurface() {
 }
 
 function DocumentRow({ document, onOpen }: { document: DocumentRecord; onOpen: () => void }) {
-  const Icon = iconFor(document.type);
+  const { icon: Icon, tile } = kindFor(document.type);
   const status = STATUS[document.status];
   const StatusIcon = status.icon;
   const processing = document.status === 'processing';
@@ -258,8 +272,8 @@ function DocumentRow({ document, onOpen }: { document: DocumentRecord; onOpen: (
           aria-expanded={hasSummary ? expanded : undefined}
           className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
         >
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-            <Icon className="size-4" strokeWidth={1.8} aria-hidden />
+          <span className={cn('icon-tile size-9', tile)}>
+            <Icon className="size-[18px]" strokeWidth={2} aria-hidden />
           </span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-medium text-foreground">{document.name}</span>
@@ -302,7 +316,7 @@ function DocumentRow({ document, onOpen }: { document: DocumentRecord; onOpen: (
       {hasSummary && expanded ? (
         <div className="animate-slide-down px-4 pb-4 pl-[64px] max-sm:pl-4">
           <div className="mb-2 flex flex-wrap items-center gap-2 text-muted-foreground">
-            <Sparkles className="size-3.5" aria-hidden />
+            <Sparkles className="size-3.5 text-ios-purple" aria-hidden />
             <span className="text-2xs font-semibold uppercase tracking-wider">Summary</span>
             {/* Extractive is verbatim document text; abstractive is model
                 output. That changes how much a reader should trust the

@@ -16,6 +16,7 @@ import {
   TabsTrigger,
   useToast,
 } from '@/components/ui';
+import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
 import { duckDocsApi, type ProviderConfigRecord } from '@/lib/api/client';
 import { applyDensity, applyTheme, readDensity, readTheme, type Density, type ThemeChoice } from '@/lib/theme';
@@ -104,6 +105,8 @@ export function SettingsSurface() {
 
       <div className="space-y-10">
         <Section
+          icon={Sparkles}
+          tile="bg-ios-purple"
           title="Models"
           description="DuckDocs answers from your local evidence index. A model only drafts the wording — remote providers are opt-in and never enabled by default."
         >
@@ -140,7 +143,7 @@ export function SettingsSurface() {
           )}
         </Section>
 
-        <Section title="Appearance" description="Dark is designed for long review sessions.">
+        <Section icon={Moon} tile="bg-ios-indigo" title="Appearance" description="Dark is designed for long review sessions.">
           <div className="list-group">
             <div className="list-row min-h-[60px] justify-between">
               <div>
@@ -189,8 +192,8 @@ export function SettingsSurface() {
           </div>
         </Section>
 
-        <Section title="Processing" description="How documents become searchable, citable evidence.">
-          <Callout icon={Cpu} title="On-device OCR">
+        <Section icon={Cpu} tile="bg-ios-orange" title="Processing" description="How documents become searchable, citable evidence.">
+          <Callout icon={Cpu} tile="bg-ios-orange" title="On-device OCR">
             Scanned PDFs and images are recognized locally with PaddleOCR, falling back to Tesseract when its model
             weights are unavailable. Every page is processed — there is no page cap or quota — and each passage keeps
             its confidence score so low-quality recognition is labeled rather than hidden. Configure with{' '}
@@ -199,8 +202,8 @@ export function SettingsSurface() {
           </Callout>
         </Section>
 
-        <Section title="Privacy" description="What runs locally, and what would leave this machine.">
-          <Callout icon={LockKeyhole} title="Your data boundary">
+        <Section icon={LockKeyhole} tile="bg-ios-green" title="Privacy" description="What runs locally, and what would leave this machine.">
+          <Callout icon={LockKeyhole} tile="bg-ios-green" title="Your data boundary">
             Files, the evidence index, and OCR all stay on this machine. There is no analytics, telemetry, or crash
             reporting. A remote provider only receives text if you configure one, and it is labeled wherever it is
             used.
@@ -223,10 +226,14 @@ export function SettingsSurface() {
 }
 
 function Section({
+  icon: Icon,
+  tile,
   title,
   description,
   children,
 }: {
+  icon: typeof Cpu;
+  tile: string;
   title: string;
   description: string;
   children: React.ReactNode;
@@ -234,7 +241,12 @@ function Section({
   return (
     <section>
       <header className="mb-3">
-        <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
+        <h3 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
+          <span className={cn('icon-tile size-7', tile)}>
+            <Icon className="size-4" strokeWidth={2.2} aria-hidden />
+          </span>
+          {title}
+        </h3>
         <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>
       </header>
       {children}
@@ -244,16 +256,20 @@ function Section({
 
 function Callout({
   icon: Icon,
+  tile,
   title,
   children,
 }: {
   icon: typeof Cpu;
+  tile: string;
   title: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex gap-4 rounded-xl bg-card p-5 shadow-sm">
-      <Icon className="size-5 shrink-0 text-muted-foreground" strokeWidth={1.8} aria-hidden />
+      <span className={cn('icon-tile size-9', tile)}>
+        <Icon className="size-[18px]" strokeWidth={2} aria-hidden />
+      </span>
       <div>
         <h4 className="text-sm font-semibold text-foreground">{title}</h4>
         <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{children}</p>

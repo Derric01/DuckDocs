@@ -2,6 +2,7 @@
 
 import { AlertCircle, CheckCircle2, ChevronRight, ScanText } from 'lucide-react';
 import { Badge, Card, EmptyState } from '@/components/ui';
+import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
 import type { DocumentRecord } from '@/lib/types';
 
@@ -28,16 +29,20 @@ export function ReviewSurface() {
       </header>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Searchable" value={`${coverage}%`} />
-        <Stat label="Ready documents" value={String(ready.length)} />
-        <Stat label="Needs attention" value={String(attention.length)} />
-        <Stat label="OCR-derived" value={String(ocrCount)} />
+        <Stat label="Searchable" value={`${coverage}%`} accent="text-ios-blue" />
+        <Stat label="Ready documents" value={String(ready.length)} accent="text-ios-green" />
+        <Stat
+          label="Needs attention"
+          value={String(attention.length)}
+          accent={attention.length ? 'text-ios-orange' : 'text-muted-foreground'}
+        />
+        <Stat label="OCR-derived" value={String(ocrCount)} accent="text-ios-purple" />
       </div>
 
       {attention.length === 0 ? (
         <EmptyState
           icon={CheckCircle2}
-          title="Nothing needs review"
+          title="All clear ✨"
           description={
             documents.length
               ? 'Every document in your library parsed cleanly and is searchable.'
@@ -52,11 +57,16 @@ export function ReviewSurface() {
               onClick={() => void inspectDocument(document)}
               className="flex w-full items-center gap-4 border-b border-border/70 p-4 text-left transition-colors duration-fast last:border-b-0 hover:bg-muted/40"
             >
-              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+              <span
+                className={cn(
+                  'icon-tile size-9',
+                  document.status === 'failed' ? 'bg-ios-red' : 'bg-ios-orange',
+                )}
+              >
                 {document.status === 'failed' ? (
-                  <AlertCircle className="size-4" strokeWidth={1.8} aria-hidden />
+                  <AlertCircle className="size-[18px]" strokeWidth={2} aria-hidden />
                 ) : (
-                  <ScanText className="size-4" strokeWidth={1.8} aria-hidden />
+                  <ScanText className="size-[18px]" strokeWidth={2} aria-hidden />
                 )}
               </span>
               <span className="min-w-0 flex-1">
@@ -75,11 +85,11 @@ export function ReviewSurface() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
-    <Card className="p-4">
+    <Card className="p-4 transition-shadow duration-200 hover:shadow-md">
       <p className="text-2xs text-muted-foreground">{label}</p>
-      <p className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
+      <p className={cn('mt-1.5 text-2xl font-semibold tabular-nums tracking-tight', accent)}>{value}</p>
     </Card>
   );
 }

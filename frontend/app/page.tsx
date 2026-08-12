@@ -1,20 +1,24 @@
 import { ArrowRight, FileSearch, LockKeyhole, ScanText, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 import { Badge, Button } from '@/components/ui';
+import { cn } from '@/lib/utils';
 
 const PILLARS = [
   {
     icon: FileSearch,
+    tile: 'bg-ios-blue',
     title: 'Evidence is an object',
     body: 'Every claim carries a citation that opens the exact passage it came from — page, lines, and confidence included.',
   },
   {
     icon: LockKeyhole,
+    tile: 'bg-ios-green',
     title: 'Local by default',
     body: 'Documents, the search index, and OCR all run on this machine. No account, no telemetry, no background uploads.',
   },
   {
     icon: ScanText,
+    tile: 'bg-ios-purple',
     title: 'Scans are first-class',
     body: 'Scanned PDFs and photographed pages are recognized on-device with no page cap, and low-confidence text is labeled rather than hidden.',
   },
@@ -27,12 +31,14 @@ const STEPS = [
   { title: 'Verify', body: 'Open any citation to read the source page and judge it yourself.' },
 ];
 
+const STEP_TILES = ['bg-ios-blue', 'bg-ios-purple', 'bg-ios-teal', 'bg-ios-green'];
+
 export default function LandingPage() {
   return (
     <main className="min-h-[100dvh] bg-background">
       <header className="material sticky top-0 z-20 flex h-14 items-center justify-between gap-6 border-b border-border px-6">
         <Link href="/" className="flex items-center gap-2.5">
-          <span className="grid size-7 place-items-center rounded-lg bg-foreground text-xs font-bold text-background">
+          <span className="icon-tile size-7 bg-gradient-to-br from-ios-blue to-ios-indigo text-xs font-bold">
             D
           </span>
           <span className="text-sm font-semibold tracking-tight">DuckDocs</span>
@@ -58,7 +64,10 @@ export default function LandingPage() {
 
       <section className="mx-auto max-w-4xl px-6 pb-16 pt-24 text-center max-sm:pt-14">
         <h1 className="text-balance mx-auto max-w-3xl text-5xl font-bold leading-[1.05] tracking-[-0.03em] max-sm:text-3xl">
-          Answers you can trace back to the page they came from
+          Answers you can trace back to{' '}
+          <span className="bg-gradient-to-br from-ios-blue via-ios-indigo to-ios-purple bg-clip-text text-transparent">
+            the page they came from
+          </span>
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground max-sm:text-base">
           DuckDocs turns your own documents into a private, searchable workspace. Ask in plain language and get an
@@ -116,8 +125,13 @@ export default function LandingPage() {
             {PILLARS.map((pillar) => {
               const Icon = pillar.icon;
               return (
-                <article key={pillar.title} className="rounded-2xl bg-card p-5 shadow-sm">
-                  <Icon className="mb-4 size-5 text-muted-foreground" strokeWidth={1.8} aria-hidden />
+                <article
+                  key={pillar.title}
+                  className="rounded-2xl bg-card p-5 shadow-sm transition-all duration-200 ease-spring hover:-translate-y-0.5 hover:shadow-lg"
+                >
+                  <span className={`icon-tile mb-4 size-10 ${pillar.tile}`}>
+                    <Icon className="size-5" strokeWidth={2} aria-hidden />
+                  </span>
                   <h3 className="text-sm font-semibold text-foreground">{pillar.title}</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{pillar.body}</p>
                 </article>
@@ -136,8 +150,13 @@ export default function LandingPage() {
           <ol className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {STEPS.map((step, index) => (
               <li key={step.title}>
-                <span className="font-mono text-xs text-primary">
-                  {String(index + 1).padStart(2, '0')}
+                <span
+                  className={cn(
+                    'inline-grid size-7 place-items-center rounded-lg font-mono text-xs font-semibold text-white',
+                    STEP_TILES[index] ?? 'bg-ios-gray',
+                  )}
+                >
+                  {index + 1}
                 </span>
                 <h3 className="mt-2.5 text-sm font-semibold text-foreground">{step.title}</h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
