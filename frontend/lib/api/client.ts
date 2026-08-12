@@ -39,6 +39,9 @@ interface ApiDocument {
   pages: number;
   category: string;
   updated_at: string;
+  summary: string | null;
+  summary_method: 'extractive' | 'abstractive' | null;
+  summary_provider: string | null;
 }
 
 interface ApiEvidence {
@@ -127,6 +130,9 @@ function mapDocument(document: ApiDocument): DocumentRecord {
     pages: document.pages,
     category: document.category,
     fidelity: mapFidelity(document.fidelity_tier),
+    summary: document.summary,
+    summaryMethod: document.summary_method,
+    summaryProvider: document.summary_provider,
   };
 }
 

@@ -10,6 +10,7 @@ import {
   FileText,
   LoaderCircle,
   Search,
+  Sparkles,
   Upload,
   type LucideIcon,
 } from 'lucide-react';
@@ -28,6 +29,17 @@ const STATUS: Record<DocumentStatus, { label: string; tone: 'success' | 'warning
   processing: { label: 'Processing', tone: 'neutral', icon: LoaderCircle, spin: true },
   review: { label: 'Needs review', tone: 'warning', icon: AlertCircle },
   failed: { label: 'Failed', tone: 'danger', icon: AlertCircle },
+};
+
+/** Raw pipeline stage names are internal; the row shows what is happening. */
+const STAGE_LABEL: Record<string, string> = {
+  queued: 'Queued',
+  parsing: 'Reading pages',
+  ocr: 'Recognizing text',
+  chunking: 'Splitting passages',
+  summarizing: 'Summarizing',
+  embedding: 'Building index',
+  indexing: 'Indexing',
 };
 
 function iconFor(type: string): LucideIcon {
@@ -225,43 +237,72 @@ function DocumentRow({ document, onOpen }: { document: DocumentRecord; onOpen: (
   const status = STATUS[document.status];
   const StatusIcon = status.icon;
   const processing = document.status === 'processing';
+  const [expanded, setExpanded] = useState(false);
+
+  const hasSummary = Boolean(document.summary);
 
   return (
-    <button className="doc-row" role="row" onClick={onOpen}>
-      <span className="doc-name" role="cell">
-        <span className="doc-icon" aria-hidden="true">
-          <Icon size={15} strokeWidth={1.7} />
-        </span>
-        <span className="doc-name-copy">
-          <strong>{document.name}</strong>
-          <small>
-            {document.type} · {document.size} · {document.pages} page{document.pages === 1 ? '' : 's'}
-          </small>
-        </span>
-      </span>
-
-      <span className="doc-fidelity" role="cell">
-        <Badge tone={document.fidelity === 'OCR dependent' ? 'accent' : 'neutral'}>{document.fidelity}</Badge>
-      </span>
-
-      <span className="doc-status" role="cell">
-        {processing && typeof document.progress === 'number' ? (
-          <span className="doc-progress">
-            <Progress value={document.progress} label={`Ingest progress for ${document.name}`} />
-            <span className="mono">{document.progress}%</span>
+    <div className="doc-entry">
+      <div className="doc-row" role="row">
+        <button
+          className="doc-name doc-name-button"
+          role="cell"
+          onClick={() => (hasSummary ? setExpanded((value) => !value) : onOpen())}
+          aria-expanded={hasSummary ? expanded : undefined}
+        >
+          <span className="doc-icon" aria-hidden="true">
+            <Icon size={15} strokeWidth={1.7} />
           </span>
-        ) : (
-          <Badge tone={status.tone} icon={StatusIcon} spinning={status.spin}>
-            {status.label}
-          </Badge>
-        )}
-      </span>
+          <span className="doc-name-copy">
+            <strong>{document.name}</strong>
+            <small>
+              {document.type} · {document.size} · {document.pages} page{document.pages === 1 ? '' : 's'}
+            </small>
+          </span>
+        </button>
 
-      <span className="doc-updated" role="cell">
-        {processing && document.stage ? document.stage : document.updated}
-      </span>
+        <span className="doc-fidelity" role="cell">
+          <Badge tone={document.fidelity === 'OCR dependent' ? 'accent' : 'neutral'}>{document.fidelity}</Badge>
+        </span>
 
-      <ChevronRight size={15} strokeWidth={1.8} className="doc-chevron" aria-hidden="true" />
-    </button>
+        <span className="doc-status" role="cell">
+          {processing && typeof document.progress === 'number' ? (
+            <span className="doc-progress">
+              <Progress value={document.progress} label={`Ingest progress for ${document.name}`} />
+              <span className="mono">{document.progress}%</span>
+            </span>
+          ) : (
+            <Badge tone={status.tone} icon={StatusIcon} spinning={status.spin}>
+              {status.label}
+            </Badge>
+          )}
+        </span>
+
+        <span className="doc-updated" role="cell">
+          {processing && document.stage ? STAGE_LABEL[document.stage] ?? document.stage : document.updated}
+        </span>
+
+        <button className="doc-open" onClick={onOpen} aria-label={`Open evidence for ${document.name}`}>
+          <ChevronRight size={15} strokeWidth={1.8} className="doc-chevron" aria-hidden="true" />
+        </button>
+      </div>
+
+      {hasSummary && expanded ? (
+        <div className="doc-summary">
+          <div className="doc-summary-head">
+            <Sparkles size={13} strokeWidth={1.8} aria-hidden="true" />
+            <span className="kicker">Summary</span>
+            {/* An extractive summary is verbatim document text; an abstractive
+                one is model output. The distinction changes how much a reader
+                should trust the wording, so it is always labeled. */}
+            <Badge tone={document.summaryMethod === 'abstractive' ? 'warning' : 'neutral'}>
+              {document.summaryMethod === 'abstractive' ? 'Model written' : 'From the document'}
+            </Badge>
+            {document.summaryProvider ? <span className="mono">{document.summaryProvider}</span> : null}
+          </div>
+          <p>{document.summary}</p>
+        </div>
+      ) : null}
+    </div>
   );
 }

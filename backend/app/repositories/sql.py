@@ -41,6 +41,9 @@ if _SQLALCHEMY_AVAILABLE:
         created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
         updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
         tags: Mapped[list[Any]] = mapped_column(JSON, default=list)
+        summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+        summary_method: Mapped[str | None] = mapped_column(String(16), nullable=True)
+        summary_provider: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     class JobRow(Base):
         __tablename__ = "ingest_jobs"
@@ -230,6 +233,9 @@ class SqlDocumentRepository:
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
                 "tags": row.tags or [],
+                "summary": row.summary,
+                "summary_method": row.summary_method,
+                "summary_provider": row.summary_provider,
             }
         )
 

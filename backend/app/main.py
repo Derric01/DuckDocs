@@ -57,6 +57,12 @@ from app.services.parsing import (
 )
 from app.services.preview import render_image_page, render_pdf_page
 from app.services.rag import RagService
+from app.services.summarize import (
+    DocumentSummary,
+    build_summary_prompt,
+    clean_model_summary,
+    summarize_extractive,
+)
 from app.services.vector_store import VectorStore
 
 
@@ -221,6 +227,49 @@ async def get_document(document_id: str, repo: Annotated[AnyRepository, Depends(
     return document
 
 
+async def build_document_summary(
+    parsed: ParsedDocument,
+    document_id: str,
+    repo: AnyRepository,
+    rag: RagService,
+    runtime: Settings,
+) -> DocumentSummary:
+    """Summarize a freshly parsed document.
+
+    The extractive summary is computed first and always kept as the floor: it
+    is verbatim document text, so it is safe to show unconditionally. A chat
+    provider is then given a chance to write something more readable. If no
+    provider is connected, or it errors, or it returns nothing usable, the
+    extractive result stands — summarization must never fail an ingest.
+    """
+    baseline = await asyncio.to_thread(summarize_extractive, parsed)
+
+    if not runtime.summarize_with_model:
+        return baseline
+
+    chat = rag.registry.get_chat_provider()
+    # The built-in extractive adapter expects RAG chunk markers, not free
+    # prose, so asking it to summarize would produce a refusal token.
+    if chat.ref["provider_type"] in {"extractive", "keyword"}:
+        return baseline
+
+    document = repo.get_document(document_id)
+    prompt = build_summary_prompt(document.name if document else "Untitled", parsed)
+    try:
+        raw = await asyncio.to_thread(chat.generate, prompt, stream=False)
+    except Exception:
+        return baseline
+
+    text = clean_model_summary(raw if isinstance(raw, str) else "".join(raw))
+    if len(text) < 24:
+        return baseline
+    return DocumentSummary(
+        text=text,
+        method="abstractive",
+        provider=f"{chat.ref['provider_type']}:{chat.ref['model_name']}",
+    )
+
+
 async def process_ingest(
     repo: AnyRepository,
     rag: RagService,
@@ -266,11 +315,14 @@ async def process_ingest(
         repo.update_document(document_id, status="review")
         return
 
-    repo.update_job(job_id, status="processing", stage="chunking", progress_pct=65)
+    repo.update_job(job_id, status="processing", stage="chunking", progress_pct=62)
     anchor_quality = _anchor_quality_for(suffix, parsed)
     chunks = await asyncio.to_thread(chunk_document, parsed, runtime, anchor_quality)
 
-    repo.update_job(job_id, status="processing", stage="embedding", progress_pct=80)
+    repo.update_job(job_id, status="processing", stage="summarizing", progress_pct=72)
+    summary = await build_document_summary(parsed, document_id, repo, rag, runtime)
+
+    repo.update_job(job_id, status="processing", stage="embedding", progress_pct=82)
     indexed_count = repo.index_document_chunks(document_id, chunks, parsed.ocr_engine)
 
     if indexed_count:
@@ -287,6 +339,9 @@ async def process_ingest(
         status="ready" if indexed_count else "review",
         fidelity_tier=parsed.fidelity_tier,
         pages=page_count,
+        summary=summary.text or None,
+        summary_method=summary.method,
+        summary_provider=summary.provider,
     )
     repo.update_job(job_id, status="ready", stage="ready", progress_pct=100)
 

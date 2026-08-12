@@ -54,6 +54,7 @@ backend/app/
     chunking.py        ParsedDocument -> ChunkCandidate (page-aware, overlap)
     ocr/               Pluggable OCR engines (see below)
     preview.py         On-demand page rasterization for the preview UI
+    summarize.py       Ingest-time document summary (extractive, model optional)
     rag.py             Retrieval + grounding gate + citation binding
     vector_store.py    Chroma wrapper, degrades to keyword search
 
@@ -72,7 +73,8 @@ frontend/
 ### The ingestion pipeline
 
 ```
-upload -> parse (per page) -> [OCR fallback if no text layer] -> chunk -> embed -> index
+upload -> parse (per page) -> [OCR fallback if no text layer]
+       -> chunk -> summarize -> embed -> index
 ```
 
 Parsing happens in a background task via `asyncio.to_thread` — it is CPU-bound and
@@ -110,6 +112,10 @@ of a scanned document is processed; there is no page cap.
    `outcome: "insufficient_evidence"`, not an error.
 6. **Bounding boxes are normalized** (0–1, top-left origin) so they stay valid at
    any render DPI.
+7. **A summary states how it was made.** `extractive` is verbatim document
+   sentences; `abstractive` is model output. The UI labels which, because they
+   warrant different levels of trust. Summarization never fails an ingest — the
+   extractive result is the floor when a model is absent or errors.
 
 ## Conventions
 
