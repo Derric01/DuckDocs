@@ -440,6 +440,14 @@ export const duckDocsApi = {
   pageImageUrl: (documentId: string, page: number, dpi = 144) =>
     `${apiBaseUrl}/documents/${encodeURIComponent(documentId)}/pages/${page}/image?dpi=${dpi}`,
 
+  /**
+   * URL for the real, original file -- not the rasterized page image. Also
+   * not fetched through `request()`: the browser opens or downloads it
+   * directly, and the backend answers Range requests for its own native
+   * PDF viewer to page through a large document.
+   */
+  documentFileUrl: (documentId: string) => `${apiBaseUrl}/documents/${encodeURIComponent(documentId)}/file`,
+
   testProviderConfig: async (id: string) =>
     request<{ reachable: boolean; latency_ms: number | null; error: string | null }>(`/settings/providers/${id}/test`, {
       method: 'POST',

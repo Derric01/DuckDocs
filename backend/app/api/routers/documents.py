@@ -1,22 +1,45 @@
-"""Document upload, listing, ingest jobs, and page previews."""
+"""Document upload, listing, ingest jobs, page previews, and the raw file."""
 
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, Query, Response, UploadFile
+from fastapi.responses import FileResponse
 
 from app.api.dependencies import RagDep, RepositoryDep, SettingsDep
 from app.core.errors import DuckDocsError
 from app.domain.models import Document, IngestJob, PaginatedDocuments, UploadItem, UploadResponse, utc_now
 from app.services.ingest import process_ingest, stored_file_path
-from app.services.parsing import IMAGE_EXTENSIONS, SUPPORTED_EXTENSIONS, probe_page_count
+from app.services.parsing import (
+    CODE_EXTENSIONS,
+    IMAGE_EXTENSIONS,
+    PLAIN_TEXT_EXTENSIONS,
+    STRUCTURED_TEXT_EXTENSIONS,
+    SUPPORTED_EXTENSIONS,
+    probe_page_count,
+)
 from app.services.preview import render_image_page, render_pdf_page
 
 router = APIRouter(tags=["documents"])
+
+# Types the browser can render directly, so opening the real file is worth
+# doing inline (a new tab, not a download prompt). Two deliberate exclusions:
+#   - TIFF has no native browser renderer, so inline would just show a blank
+#     tab; it downloads instead, same as the office formats.
+#   - HTML is excluded even though browsers render it -- a stored HTML upload
+#     served inline from this origin would execute any script it contains
+#     (stored XSS). It always downloads, regardless of what it actually is.
+_INLINE_SAFE_EXTENSIONS = (
+    {"pdf", "png", "jpg", "jpeg", "webp", "bmp", "csv"}
+    | CODE_EXTENSIONS
+    | STRUCTURED_TEXT_EXTENSIONS
+    | PLAIN_TEXT_EXTENSIONS
+)
 
 
 @router.get("/documents", response_model=PaginatedDocuments)
@@ -37,6 +60,53 @@ async def get_document(document_id: str, repo: RepositoryDep) -> Document:
     if document is None:
         raise DuckDocsError("not_found", "Document was not found.", 404)
     return document
+
+
+@router.get("/documents/{document_id}/file")
+async def document_file(document_id: str, repo: RepositoryDep, runtime: SettingsDep) -> FileResponse:
+    """The real, original file -- not a re-rendered page image.
+
+    The source panel's page view is a rasterized image so it can draw the
+    citation bounding box on top of it, which is genuinely useful and worth
+    keeping. But a raster is not the document: it has no selectable text, no
+    real fonts, and formats with no page-image concept at all (DOCX, XLSX,
+    PPTX) have no visual representation there whatsoever. This serves the
+    actual stored bytes so the browser's own viewer -- or, for formats it
+    can't render, the OS's default handler -- opens the real thing.
+
+    Starlette's FileResponse answers Range requests itself (206 Partial
+    Content), which is what lets a browser's built-in PDF viewer page through
+    a large file without pulling the whole thing up front.
+    """
+    document = repo.get_document(document_id)
+    if document is None:
+        raise DuckDocsError("not_found", "Document was not found.", 404)
+
+    file_path = stored_file_path(runtime, document_id, document.name)
+    if not file_path.exists():
+        raise DuckDocsError(
+            "not_found",
+            "The stored file for this document is missing.",
+            404,
+            "Upload the file again.",
+        )
+
+    media_type = document.mime_type if "/" in document.mime_type else None
+    media_type = media_type or mimetypes.guess_type(document.name)[0] or "application/octet-stream"
+    disposition = "inline" if document.file_type in _INLINE_SAFE_EXTENSIONS else "attachment"
+
+    return FileResponse(
+        file_path,
+        media_type=media_type,
+        filename=document.name,
+        content_disposition_type=disposition,
+        headers={
+            # The browser must render exactly what was declared, never sniff
+            # a stored upload into something more dangerous than its extension.
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
 
 
 @router.post("/documents", response_model=UploadResponse, status_code=201)

@@ -270,3 +270,13 @@ describe('askStream', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('documentFileUrl', () => {
+  it('points at the raw-file endpoint, not the rasterized page image', () => {
+    expect(duckDocsApi.documentFileUrl('doc_1')).toBe('/api/v1/documents/doc_1/file');
+  });
+
+  it('encodes the document id', () => {
+    expect(duckDocsApi.documentFileUrl('doc/../etc')).toBe('/api/v1/documents/doc%2F..%2Fetc/file');
+  });
+});

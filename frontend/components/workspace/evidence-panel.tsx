@@ -6,11 +6,12 @@
  * without a page image fall back to the text view automatically.
  */
 
-import { AlertTriangle, PanelRight, ScanText, X } from 'lucide-react';
+import { AlertTriangle, ExternalLink, PanelRight, ScanText, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, EmptyState, Tabs, TabsList, TabsTrigger } from '@/components/ui';
 import { PageViewer } from '@/components/workspace/page-viewer';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
+import { duckDocsApi } from '@/lib/api/client';
 import { kindFor } from '@/lib/document-kind';
 import { cn } from '@/lib/utils';
 import type { AnchorQuality, EvidenceRecord } from '@/lib/types';
@@ -132,6 +133,7 @@ function EvidenceText({
   const isOcr = evidence.fidelity === 'OCR dependent' || typeof confidence === 'number';
   const isLow = typeof confidence === 'number' && confidence < LOW_CONFIDENCE;
   const { icon: KindIcon, mark } = kindFor(evidence.documentName);
+  const { documentId } = evidence;
 
   return (
     <div className="space-y-4">
@@ -139,10 +141,23 @@ function EvidenceText({
         <span className={cn('kind-mark size-8', mark)}>
           <KindIcon className="size-4" strokeWidth={1.7} aria-hidden />
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-foreground">{evidence.documentName}</p>
           <p className="truncate text-2xs text-muted-foreground">{evidence.section}</p>
         </div>
+        {/* No page-image concept for this format, so this is the only way to
+            see the real document at all -- not just a nicety. */}
+        {documentId ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 gap-1.5 px-2 text-2xs"
+            onClick={() => window.open(duckDocsApi.documentFileUrl(documentId), '_blank', 'noopener,noreferrer')}
+          >
+            <ExternalLink className="size-3" aria-hidden />
+            Open original
+          </Button>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap gap-1.5">
@@ -197,7 +212,8 @@ function EvidenceText({
 
       {showFallbackNote ? (
         <p className="text-xs leading-snug text-muted-foreground">
-          This format has no page image, so the extracted text is the source of record.
+          This format has no page image, so the passage above is extracted text, not a rendering.{' '}
+          {documentId ? 'Open the original above to see it as authored.' : ''}
         </p>
       ) : null}
     </div>

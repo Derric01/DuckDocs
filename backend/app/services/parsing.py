@@ -444,7 +444,14 @@ def parse_pdf(payload: bytes, settings: Settings, on_page: ProgressCallback | No
     if not pages:
         return None
 
-    ocr_used = any(page.source == "ocr" for page in pages)
+    # Fidelity must reflect whether OCR was *needed*, not whether it happened
+    # to succeed. A page queued for OCR that recognizes nothing falls back to
+    # its own sparse native text (below ocr_min_chars_per_page -- that sparse
+    # text is why it was queued in the first place) tagged source="native". If
+    # every scanned page in a document does this, `any(page.source == "ocr")`
+    # would report the whole document as "full_layout" -- claiming more
+    # precision than the parser actually delivered (invariant 1).
+    ocr_used = bool(scan_numbers)
     return ParsedDocument(
         pages=pages,
         fidelity_tier="ocr_dependent" if ocr_used else "full_layout",

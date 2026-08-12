@@ -20,7 +20,7 @@ cd backend
 python -m pip install -e ".[dev]"
 python -m uvicorn app.main:app --reload --port 8000
 
-python -m pytest -q          # 89 tests
+python -m pytest -q          # 100 tests
 python -m ruff check app tests migrations
 python -m mypy app           # strict mode, must stay clean
 
@@ -33,7 +33,7 @@ cd frontend
 npm install
 npm run dev                  # :3000
 npm run typecheck            # must stay clean
-npm test                     # 45 Vitest tests
+npm test                     # 47 Vitest tests
 npm run build
 
 # Full stack
@@ -101,6 +101,17 @@ Ingestion runs in-process, so a job still marked `queued`/`processing` at startu
 was orphaned by a previous exit. `reconcile_orphaned_jobs()` fails those with
 `reason_code="interrupted"` and moves the document to `review`; the stored file is
 kept so `POST /documents/{id}/retry` can re-run the whole pipeline.
+
+That same stored file is also served as-is by `GET /documents/{id}/file` — the
+source panel's rasterized page view draws the citation bounding box, which a raw
+file can't do, but it has no selectable text and formats with no page-image
+concept (DOCX/XLSX/PPTX) have no visual representation there at all. This is the
+escape hatch to the real document: a PDF opens in the browser's own viewer (Range
+requests answered, so a large one pages without downloading whole), everything
+else downloads. HTML always downloads regardless of what the browser could
+otherwise render — serving stored user content inline as `text/html` from the
+app's own origin is stored XSS. `X-Content-Type-Options: nosniff` on every
+response backs that up structurally.
 
 ### OCR (`services/ocr/`)
 
@@ -202,3 +213,12 @@ interrupted-ingest recovery + retry, full UI across 4 surfaces + landing.
   where Alembic is somehow unavailable.
 - `PIL.ImageSequence.Iterator` yields the *same* object seeked to each frame, so
   `list(...)` gives N references to the last frame. Use `image.seek(n)`.
+- The frontend's default API path is `app/api/v1/[...path]/route.ts`, a same-origin
+  proxy to the backend (avoids CORS). It forwards *every* request/response header
+  except the hop-by-hop ones — not an allowlist. It used to only pass through
+  `content-type`, which silently dropped `Content-Disposition` (undoing the
+  DOCX/HTML attachment-vs-inline distinction), `Cache-Control` (the page-image
+  endpoint's `immutable` header never reached the browser), and `Range`/`Accept-Ranges`
+  (no partial content, ever, through the default network path). If a new endpoint's
+  behavior depends on a header and works when curled directly at :8000 but not
+  through :3000, check this file first.

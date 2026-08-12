@@ -101,10 +101,18 @@ def build_ask_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
 def score_confidence(chunks: list[RetrievedChunk], cited_ids: list[str]) -> ConfidenceBreakdown:
     cited = [chunk for chunk in chunks if chunk.evidence.id in cited_ids]
     retrieval = sum(chunk.score for chunk in cited) / max(1, len(cited)) if cited else 0.0
-    ocr = 1.0
+    # A hardcoded 1.0 here would systematically overstate confidence for every
+    # answer grounded in a scanned document -- exactly the number RULE-10 says
+    # must reflect real uncertainty. Average the real OCR confidence of cited
+    # chunks that have one; a citation with no OCR confidence contributes
+    # nothing to discount because it wasn't recognized, it was extracted.
+    ocr_values = [chunk.evidence.ocr_confidence for chunk in cited if chunk.evidence.ocr_confidence is not None]
+    ocr = sum(ocr_values) / len(ocr_values) if ocr_values else 1.0
     coverage = len(set(cited_ids)) / max(1, len(chunks))
     overall = 0.5 * retrieval + 0.3 * ocr + 0.2 * coverage
-    return ConfidenceBreakdown(overall=round(overall, 3), retrieval=round(retrieval, 3), ocr=ocr, coverage=round(coverage, 3))
+    return ConfidenceBreakdown(
+        overall=round(overall, 3), retrieval=round(retrieval, 3), ocr=round(ocr, 3), coverage=round(coverage, 3)
+    )
 
 
 class RagService:
@@ -273,6 +281,7 @@ class RagService:
                 "confidence": confidence.overall,
                 "retrieval": confidence.retrieval,
                 "coverage": confidence.coverage,
+                "ocr": confidence.ocr,
             },
         )
 

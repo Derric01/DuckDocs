@@ -122,6 +122,45 @@ def test_scanned_pdf_with_no_text_layer_is_ocrd() -> None:
     assert events == [(1, 1)]
 
 
+def test_fidelity_stays_ocr_dependent_when_ocr_finds_nothing(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A page queued for OCR that recognizes nothing must not report full_layout.
+
+    The page falls back to its own sparse native text (source="native") -- the
+    same text that was too sparse to trust in the first place, which is why it
+    was queued for OCR. Fidelity has to reflect that OCR was needed, not
+    whether it happened to succeed (invariant 1: never claim more precision
+    than the parser delivered).
+    """
+    from app.services.ocr.base import OcrResult
+
+    class _EmptyEngine:
+        name = "stub-empty"
+
+        def available(self) -> bool:
+            return True
+
+        def recognize(self, image: object, languages: str) -> OcrResult:
+            return OcrResult("", None, self.name)
+
+        def recognize_batch(self, images: list[object], languages: str) -> list[OcrResult]:
+            return [OcrResult("", None, self.name) for _ in images]
+
+    monkeypatch.setattr("app.services.parsing.build_engine", lambda settings: _EmptyEngine())
+
+    # Under the default 40-char threshold this native text is too sparse to
+    # trust, so the page is queued for OCR -- which the stub engine then fails.
+    payload = _native_pdf_bytes("Hi")
+    parsed = parse_pdf(payload, SETTINGS)
+
+    assert parsed is not None
+    assert parsed.fidelity_tier == "ocr_dependent"
+    assert parsed.ocr_engine == "stub-empty"
+    # The page itself still carries its real (sparse) native text and no
+    # fabricated OCR confidence -- only the document-level claim was wrong.
+    assert parsed.pages[0].source == "native"
+    assert parsed.pages[0].confidence is None
+
+
 def test_every_scanned_page_is_ocrd_not_just_a_prefix() -> None:
     """No artificial page cap: a multi-page scanned PDF gets OCR on every page."""
     document = fitz.open()

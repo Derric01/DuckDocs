@@ -13,6 +13,7 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   Maximize2,
   Minus,
   Plus,
@@ -58,6 +59,17 @@ export function PageViewer({
   const [viewport, setViewport] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
   const src = useMemo(() => duckDocsApi.pageImageUrl(documentId, page), [documentId, page]);
+
+  // The rasterized image above draws the citation bounding box, which the
+  // real file can't do -- worth keeping as the default view. This is the
+  // escape hatch to the actual document: real fonts, selectable text, and
+  // for a PDF, the browser's own viewer jumps straight to the cited page via
+  // the #page fragment.
+  const isPdf = documentName.toLowerCase().endsWith('.pdf');
+  const originalUrl = useMemo(() => {
+    const base = duckDocsApi.documentFileUrl(documentId);
+    return isPdf ? `${base}#page=${page}` : base;
+  }, [documentId, isPdf, page]);
 
   // Reset transient state when the page or document changes; keep the user's
   // zoom preference, which should persist as they page through.
@@ -199,6 +211,14 @@ export function PageViewer({
             onClick={() => setFit(fit === 'page' ? 'width' : 'page')}
           >
             <Maximize2 className="size-4" />
+          </Button>
+          <Button
+            variant="ghost" size="sm" className="size-8 p-0"
+            aria-label="Open original document"
+            title="Open the real file in a new tab"
+            onClick={() => window.open(originalUrl, '_blank', 'noopener,noreferrer')}
+          >
+            <ExternalLink className="size-4" />
           </Button>
         </div>
       </div>
