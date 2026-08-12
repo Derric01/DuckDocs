@@ -29,12 +29,12 @@ export function ReviewSurface() {
       </header>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Searchable" value={`${coverage}%`} accent="text-ios-blue" />
+        <Stat label="Searchable" value={`${coverage}%`} accent="text-primary-vivid" />
         <Stat label="Ready documents" value={String(ready.length)} accent="text-ios-green" />
         <Stat
           label="Needs attention"
           value={String(attention.length)}
-          accent={attention.length ? 'text-ios-orange' : 'text-muted-foreground'}
+          accent={attention.length ? 'text-ios-pink' : 'text-muted-foreground'}
         />
         <Stat label="OCR-derived" value={String(ocrCount)} accent="text-ios-purple" />
       </div>
@@ -60,7 +60,7 @@ export function ReviewSurface() {
               <span
                 className={cn(
                   'icon-tile size-9',
-                  document.status === 'failed' ? 'bg-ios-red' : 'bg-ios-orange',
+                  document.status === 'failed' ? 'bg-ios-red' : 'bg-ios-pink',
                 )}
               >
                 {document.status === 'failed' ? (

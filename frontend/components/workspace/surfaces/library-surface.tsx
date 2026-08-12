@@ -161,7 +161,7 @@ export function LibrarySurface() {
         <span
           className={cn(
             'icon-tile size-11 transition-colors duration-200',
-            dragging ? 'bg-ios-blue' : 'bg-gradient-to-br from-ios-blue to-ios-indigo',
+            dragging ? 'bg-ios-orange' : 'bg-gradient-to-br from-ios-orange to-ios-pink',
           )}
         >
           {uploading ? (

@@ -192,8 +192,8 @@ export function SettingsSurface() {
           </div>
         </Section>
 
-        <Section icon={Cpu} tile="bg-ios-orange" title="Processing" description="How documents become searchable, citable evidence.">
-          <Callout icon={Cpu} tile="bg-ios-orange" title="On-device OCR">
+        <Section icon={Cpu} tile="bg-primary" title="Processing" description="How documents become searchable, citable evidence.">
+          <Callout icon={Cpu} tile="bg-primary" title="On-device OCR">
             Scanned PDFs and images are recognized locally with PaddleOCR, falling back to Tesseract when its model
             weights are unavailable. Every page is processed — there is no page cap or quota — and each passage keeps
             its confidence score so low-quality recognition is labeled rather than hidden. Configure with{' '}

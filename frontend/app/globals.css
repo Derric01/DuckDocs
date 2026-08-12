@@ -28,15 +28,22 @@
     --secondary: 240 5% 96%;
     --secondary-foreground: 240 6% 10%;
 
-    /* systemBlue */
-    --primary: 211 100% 50%;
+    /* Brand orange.
+       systemOrange (28 100% 50%) only reaches 2.66:1 against white text, a
+       clear AA failure, so the filled variant is deepened to 40% lightness
+       (4.95:1). The brighter tint is kept separately for text and icons,
+       which sit on the page rather than inside a filled control. */
+    --primary: 20 92% 40%;
     --primary-foreground: 0 0% 100%;
-    --primary-muted: 211 100% 96%;
+    --primary-muted: 24 100% 95%;
+    --primary-vivid: 24 100% 47%;
 
     --success: 142 61% 37%;
     --success-muted: 142 60% 95%;
-    --warning: 32 90% 40%;
-    --warning-muted: 32 90% 95%;
+    /* Pushed toward amber: orange is now the brand colour, and a caution
+       state must not be mistakable for a call to action. */
+    --warning: 45 96% 33%;
+    --warning-muted: 45 96% 94%;
     --destructive: 3 72% 51%;
     --destructive-foreground: 0 0% 100%;
     --destructive-muted: 3 72% 96%;
@@ -44,7 +51,7 @@
     --border: 240 6% 90%;
     --border-strong: 240 5% 82%;
     --input: 240 6% 90%;
-    --ring: 211 100% 50%;
+    --ring: 20 92% 40%;
 
     --shadow-xs: 0 1px 2px rgba(15, 18, 26, 0.04);
     --shadow-sm: 0 1px 3px rgba(15, 18, 26, 0.06), 0 1px 2px rgba(15, 18, 26, 0.04);
@@ -54,7 +61,7 @@
 
     /* iOS system colours (light) */
     --ios-red: 3 100% 59%;
-    --ios-orange: 28 100% 52%;
+    --ios-orange: 24 100% 47%;
     --ios-yellow: 42 100% 47%;
     --ios-green: 142 71% 38%;
     --ios-teal: 189 76% 43%;
@@ -84,15 +91,18 @@
     --secondary: 240 4% 15%;
     --secondary-foreground: 0 0% 98%;
 
-    /* systemBlue (dark) — brighter so it holds contrast on black */
-    --primary: 211 100% 60%;
-    --primary-foreground: 0 0% 100%;
-    --primary-muted: 211 60% 18%;
+    /* Dark mode inverts the fix: a bright orange with near-black text
+       (8.96:1) reads better than any orange that white text can sit on,
+       which is exactly how iOS treats its orange and yellow buttons. */
+    --primary: 30 100% 60%;
+    --primary-foreground: 240 6% 8%;
+    --primary-muted: 26 70% 18%;
+    --primary-vivid: 32 100% 66%;
 
     --success: 142 60% 52%;
     --success-muted: 142 40% 16%;
-    --warning: 32 90% 60%;
-    --warning-muted: 32 50% 18%;
+    --warning: 45 95% 60%;
+    --warning-muted: 45 50% 18%;
     --destructive: 3 85% 65%;
     --destructive-foreground: 0 0% 100%;
     --destructive-muted: 3 50% 20%;
@@ -100,7 +110,7 @@
     --border: 240 4% 18%;
     --border-strong: 240 4% 28%;
     --input: 240 4% 20%;
-    --ring: 211 100% 60%;
+    --ring: 30 100% 60%;
 
     --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -110,7 +120,7 @@
 
     /* iOS system colours (dark) — lifted so they hold on black */
     --ios-red: 3 100% 66%;
-    --ios-orange: 28 100% 60%;
+    --ios-orange: 30 100% 60%;
     --ios-yellow: 42 100% 58%;
     --ios-green: 142 62% 50%;
     --ios-teal: 189 78% 55%;

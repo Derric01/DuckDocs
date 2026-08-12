@@ -28,6 +28,9 @@ const config: Config = {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
           muted: 'hsl(var(--primary-muted))',
+          /* Brand orange at full chroma, for text and icons that sit on the
+             page. Never use as a fill behind white text — see globals.css. */
+          vivid: 'hsl(var(--primary-vivid))',
         },
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',

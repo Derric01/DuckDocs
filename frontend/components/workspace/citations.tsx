@@ -165,7 +165,7 @@ function CitationCard({
                   passage.id === activeId ? 'bg-primary/10' : 'hover:bg-muted',
                 )}
               >
-                <span className="shrink-0 font-mono text-2xs tabular-nums text-primary">p{passage.page}</span>
+                <span className="shrink-0 font-mono text-2xs tabular-nums text-primary-vivid">p{passage.page}</span>
                 <span
                   className={cn(
                     'line-clamp-2 text-xs leading-snug',

@@ -24,9 +24,9 @@ import type { Surface } from '@/lib/types';
 
 /** Each surface keeps one hue everywhere it appears, so colour teaches. */
 const NAV: Array<{ id: Surface; label: string; icon: LucideIcon; tile: string }> = [
-  { id: 'intelligence', label: 'Ask', icon: MessageSquareText, tile: 'bg-ios-blue' },
+  { id: 'intelligence', label: 'Ask', icon: MessageSquareText, tile: 'bg-ios-orange' },
   { id: 'library', label: 'Library', icon: LibraryBig, tile: 'bg-ios-teal' },
-  { id: 'review', label: 'Review', icon: Highlighter, tile: 'bg-ios-orange' },
+  { id: 'review', label: 'Review', icon: Highlighter, tile: 'bg-ios-pink' },
   { id: 'settings', label: 'Settings', icon: Settings2, tile: 'bg-ios-gray' },
 ];
 
@@ -98,7 +98,7 @@ export function AppShell({ surface, children }: { surface: Surface; children: Re
         >
           <div className="px-4 pb-3 pt-4">
             <Link href="/" className="flex items-center gap-2.5 rounded-lg px-1 py-1">
-              <span className="icon-tile size-7 bg-gradient-to-br from-ios-blue to-ios-indigo text-xs font-bold">
+              <span className="icon-tile size-7 bg-gradient-to-br from-ios-orange to-ios-pink text-xs font-bold">
                 D
               </span>
               <span className="min-w-0">

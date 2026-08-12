@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 const PILLARS = [
   {
     icon: FileSearch,
-    tile: 'bg-ios-blue',
+    tile: 'bg-primary',
     title: 'Evidence is an object',
     body: 'Every claim carries a citation that opens the exact passage it came from — page, lines, and confidence included.',
   },
@@ -31,14 +31,14 @@ const STEPS = [
   { title: 'Verify', body: 'Open any citation to read the source page and judge it yourself.' },
 ];
 
-const STEP_TILES = ['bg-ios-blue', 'bg-ios-purple', 'bg-ios-teal', 'bg-ios-green'];
+const STEP_TILES = ['bg-primary', 'bg-ios-purple', 'bg-ios-teal', 'bg-ios-green'];
 
 export default function LandingPage() {
   return (
     <main className="min-h-[100dvh] bg-background">
       <header className="material sticky top-0 z-20 flex h-14 items-center justify-between gap-6 border-b border-border px-6">
         <Link href="/" className="flex items-center gap-2.5">
-          <span className="icon-tile size-7 bg-gradient-to-br from-ios-blue to-ios-indigo text-xs font-bold">
+          <span className="icon-tile size-7 bg-gradient-to-br from-ios-orange to-ios-pink text-xs font-bold">
             D
           </span>
           <span className="text-sm font-semibold tracking-tight">DuckDocs</span>
@@ -65,7 +65,7 @@ export default function LandingPage() {
       <section className="mx-auto max-w-4xl px-6 pb-16 pt-24 text-center max-sm:pt-14">
         <h1 className="text-balance mx-auto max-w-3xl text-5xl font-bold leading-[1.05] tracking-[-0.03em] max-sm:text-3xl">
           Answers you can trace back to{' '}
-          <span className="bg-gradient-to-br from-ios-blue via-ios-indigo to-ios-purple bg-clip-text text-transparent">
+          <span className="bg-gradient-to-br from-ios-orange via-ios-pink to-ios-purple bg-clip-text text-transparent">
             the page they came from
           </span>
         </h1>
