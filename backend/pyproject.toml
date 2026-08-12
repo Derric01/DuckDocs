@@ -15,10 +15,13 @@ dependencies = [
   "httpx==0.28.1",
   "chromadb==0.5.23",
   "sqlalchemy==2.0.36",
+  "alembic==1.14.0",
   "psycopg[binary]==3.2.3",
   "pymupdf==1.25.1",
-  "paddlepaddle==3.0.0",
-  "paddleocr==3.7.0",
+  # PP-OCR models via ONNX with the weights inside the wheel: same accuracy
+  # as PaddleOCR without the paddlex tree (langchain, openai, pandas), and
+  # no first-run download.
+  "rapidocr-onnxruntime==1.4.4",
   "pytesseract==0.3.13",
   "pillow==11.1.0",
   "openpyxl==3.1.5",
@@ -26,6 +29,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The upstream Paddle runtime, for anyone who wants it instead of ONNX.
+# Heavy: pulls paddlex and its transitive tree.
+paddle = [
+  "paddlepaddle==3.0.0",
+  "paddleocr==3.7.0",
+]
 dev = [
   "pytest==8.3.4",
   "pytest-asyncio==0.25.0",
@@ -49,7 +58,7 @@ strict = true
 python_version = "3.12"
 
 [[tool.mypy.overrides]]
-module = ["fitz", "pytesseract", "openpyxl", "pptx", "paddleocr", "numpy"]
+module = ["fitz", "pytesseract", "openpyxl", "pptx", "paddleocr", "rapidocr_onnxruntime", "numpy"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

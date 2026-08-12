@@ -93,6 +93,12 @@ export interface GroundedAnswer {
   refusalReason?: string | null;
 }
 
+export interface AskStreamHandlers {
+  /** Called with each token as it arrives, before the final result. */
+  onToken?: (token: string) => void;
+  signal?: AbortSignal;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -238,6 +244,55 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/** One SSE frame -> its event name and decoded JSON payload. */
+export function parseSseFrame(frame: string): { event: string; data: unknown } | null {
+  let event = 'message';
+  const dataLines: string[] = [];
+  for (const line of frame.split('\n')) {
+    if (line.startsWith('event:')) event = line.slice(6).trim();
+    else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+  }
+  if (dataLines.length === 0) return null;
+  try {
+    return { event, data: JSON.parse(dataLines.join('\n')) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Citations reference evidence by id; the panel needs the full unit. A lookup
+ * that fails degrades to the snippet the answer already carried rather than
+ * dropping the citation, because an uncited claim is worse than a thin one.
+ */
+async function hydrateAnswer(response: ApiGroundedResponse): Promise<GroundedAnswer> {
+  const citations = await Promise.all(
+    response.citations.map(async (citation) => {
+      try {
+        return await duckDocsApi.getEvidence(citation.evidence_unit_id);
+      } catch {
+        return {
+          id: citation.evidence_unit_id,
+          documentName: 'Retrieved evidence',
+          section: `Citation ${citation.ordinal}`,
+          page: 1,
+          lines: '1-1',
+          relevance: 'Medium' as const,
+          snippet: citation.snippet,
+        };
+      }
+    }),
+  );
+  return {
+    answer: response.answer,
+    grounded: response.grounded,
+    outcome: response.outcome,
+    citations,
+    providerLabel: `${response.provider.name} ${response.provider.model}`.trim(),
+    refusalReason: response.refusal_reason,
+  };
+}
+
 export const duckDocsApi = {
   /**
    * Documents joined with their live ingest job, so a row can show real
@@ -289,31 +344,67 @@ export const duckDocsApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, scope: { type: 'library' } }),
     });
-    const citations = await Promise.all(
-      response.citations.map(async (citation) => {
-        try {
-          return await duckDocsApi.getEvidence(citation.evidence_unit_id);
-        } catch {
-          return {
-            id: citation.evidence_unit_id,
-            documentName: 'Retrieved evidence',
-            section: `Citation ${citation.ordinal}`,
-            page: 1,
-            lines: '1-1',
-            relevance: 'Medium' as const,
-            snippet: citation.snippet,
-          };
+    return hydrateAnswer(response);
+  },
+  /**
+   * Streamed answer. Tokens arrive as they are produced; the terminal `done`
+   * event carries the authoritative result, so citations and the refusal
+   * outcome come from the same response the blocking call would have given.
+   *
+   * Any failure before `done` falls back to `ask()` — a partial answer with no
+   * citations would violate the product's grounding contract, so it is never
+   * committed to the transcript.
+   */
+  askStream: async (query: string, handlers: AskStreamHandlers = {}): Promise<GroundedAnswer> => {
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/ask/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+        body: JSON.stringify({ query, scope: { type: 'library' } }),
+        signal: handlers.signal,
+      });
+    } catch (error) {
+      if (handlers.signal?.aborted) throw error;
+      return duckDocsApi.ask(query);
+    }
+    if (!response.ok || !response.body) return duckDocsApi.ask(query);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: ApiGroundedResponse | null = null;
+
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE frames are separated by a blank line; keep any partial tail.
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary !== -1) {
+          const frame = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          const parsed = parseSseFrame(frame);
+          if (parsed?.event === 'token') {
+            const token = (parsed.data as { text?: string }).text;
+            if (typeof token === 'string') handlers.onToken?.(token);
+          } else if (parsed?.event === 'done') {
+            result = parsed.data as ApiGroundedResponse;
+          }
+          boundary = buffer.indexOf('\n\n');
         }
-      }),
-    );
-    return {
-      answer: response.answer,
-      grounded: response.grounded,
-      outcome: response.outcome,
-      citations,
-      providerLabel: `${response.provider.name} ${response.provider.model}`.trim(),
-      refusalReason: response.refusal_reason,
-    };
+      }
+    } catch (error) {
+      if (handlers.signal?.aborted) throw error;
+      return duckDocsApi.ask(query);
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (!result) return duckDocsApi.ask(query);
+    return hydrateAnswer(result);
   },
   listProviderConfigs: async () => {
     const response = await request<ApiProviderConfig[]>('/settings/providers');

@@ -3,6 +3,7 @@
 import {
   AlertCircle,
   Check,
+  ChevronDown,
   ChevronRight,
   FileCode2,
   FileImage,
@@ -277,8 +278,21 @@ function DocumentRow({ document, onOpen }: { document: DocumentRecord; onOpen: (
           </span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-medium text-foreground">{document.name}</span>
-            <span className="block truncate text-2xs text-muted-foreground">
-              {document.type} · {document.size} · {document.pages} page{document.pages === 1 ? '' : 's'}
+            <span className="flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground">
+              <span className="truncate">
+                {document.type} · {document.size} · {document.pages} page{document.pages === 1 ? '' : 's'}
+              </span>
+              {/* Without this the summary is invisible: nothing else on the row
+                  says the name is a disclosure rather than a link. */}
+              {hasSummary ? (
+                <span className="flex shrink-0 items-center gap-0.5 text-primary-vivid">
+                  <ChevronDown
+                    className={cn('size-3 transition-transform duration-200 ease-spring', expanded && 'rotate-180')}
+                    aria-hidden
+                  />
+                  Summary
+                </span>
+              ) : null}
             </span>
           </span>
         </button>

@@ -20,43 +20,56 @@ cd backend
 python -m pip install -e ".[dev]"
 python -m uvicorn app.main:app --reload --port 8000
 
-python -m pytest -q          # 55 tests
-python -m ruff check app tests
+python -m pytest -q          # 89 tests
+python -m ruff check app tests migrations
 python -m mypy app           # strict mode, must stay clean
+
+# Schema (only when DUCKDOCS_DB_URL is set; runs itself at startup)
+DUCKDOCS_DB_URL=... alembic upgrade head
+DUCKDOCS_DB_URL=... alembic revision -m "what changed"
 
 # Frontend
 cd frontend
 npm install
 npm run dev                  # :3000
 npm run typecheck            # must stay clean
+npm test                     # 45 Vitest tests
 npm run build
 
 # Full stack
 docker compose up -d --build
 ```
 
-**Running tests locally:** set `DUCKDOCS_OCR_ENGINE=tesseract` to skip PaddleOCR's
-weight-download attempt, which is slow when the model host is unreachable.
+**Running tests locally:** `DUCKDOCS_OCR_ENGINE=tesseract` keeps the registry off
+RapidOCR's model load, which shaves a few seconds off a full run. The RapidOCR
+adapter is still exercised directly by its own tests.
 
 ## Architecture
 
 ```
-backend/app/
-  main.py              FastAPI app + all routes (~570 lines; split if it grows much more)
-  core/config.py       Settings.from_env() — every tunable is an env var
-  core/errors.py       DuckDocsError + the stable error envelope
-  domain/models.py     Pydantic models = the API contract
-  providers/           Chat/embedding adapters (ollama, extractive, keyword) + registry
-  repositories/        memory.py (JSON) and sql.py (Postgres); same interface.
+backend/
+  alembic.ini          Migration config; URL comes from DUCKDOCS_DB_URL
+  migrations/versions/ Hand-written revisions (0001 = the pre-Alembic shape)
+  app/
+    main.py            Composition only: middleware, routers, lifespan
+    api/dependencies.py  Singletons + the Annotated dependency aliases
+    api/routers/       documents.py, search.py, settings.py, health.py
+    core/config.py     Settings.from_env() — every tunable is an env var
+    core/errors.py     DuckDocsError + the stable error envelope
+    domain/models.py   Pydantic models = the API contract
+    providers/         Chat/embedding adapters (ollama, extractive, keyword) + registry
+    repositories/      memory.py (JSON) and sql.py (Postgres); same interface.
                        `AnyRepository` in __init__.py is the type both satisfy.
-  services/
-    parsing.py         Format dispatch -> ParsedDocument (pages + provenance)
-    chunking.py        ParsedDocument -> ChunkCandidate (page-aware, overlap)
-    ocr/               Pluggable OCR engines (see below)
-    preview.py         On-demand page rasterization for the preview UI
-    summarize.py       Ingest-time document summary (extractive, model optional)
-    rag.py             Retrieval + grounding gate + citation binding
-    vector_store.py    Chroma wrapper, degrades to keyword search
+                       migrations.py runs Alembic (and adopts a pre-Alembic DB).
+    services/
+      ingest.py        The pipeline itself + startup orphan reconciliation
+      parsing.py       Format dispatch -> ParsedDocument (pages + provenance)
+      chunking.py      ParsedDocument -> ChunkCandidate (page-aware, overlap)
+      ocr/             Pluggable OCR engines (see below)
+      preview.py       Page rasterization, LRU-cached by path+mtime+size
+      summarize.py     Ingest-time document summary (extractive, model optional)
+      rag.py           Retrieval + grounding gate + citation binding
+      vector_store.py  Chroma wrapper, degrades to keyword search
 
 frontend/                Tailwind + shadcn-style components on Radix
   app/                 Thin routes; one per surface + landing
@@ -68,8 +81,9 @@ frontend/                Tailwind + shadcn-style components on Radix
     workspace-provider.tsx   Shared state for every surface
     app-shell.tsx            Sidebar + topbar + panel orchestration
     surfaces/                One file per surface
-  lib/api/client.ts    All backend calls + API->UI mapping
+  lib/api/client.ts    All backend calls + API->UI mapping, incl. the SSE reader
   lib/theme.ts         Theme/density persistence + pre-paint bootstrap
+  tests/               Vitest + Testing Library (jsdom)
 ```
 
 ### The ingestion pipeline
@@ -83,18 +97,24 @@ Parsing happens in a background task via `asyncio.to_thread` — it is CPU-bound
 must never block the event loop. Progress is reported per stage to the ingest job,
 which the frontend polls while anything is processing.
 
+Ingestion runs in-process, so a job still marked `queued`/`processing` at startup
+was orphaned by a previous exit. `reconcile_orphaned_jobs()` fails those with
+`reason_code="interrupted"` and moves the document to `review`; the stored file is
+kept so `POST /documents/{id}/retry` can re-run the whole pipeline.
+
 ### OCR (`services/ocr/`)
 
 Engines sit behind the `OcrEngine` protocol so the backend is swappable:
 
-- **PaddleOCR** — default. Better on poor scans and non-Latin scripts, returns
-  per-line polygons which become real bounding-box citation anchors.
-  Downloads weights once on first use, then fully offline.
-- **Tesseract** — fallback. Its language data ships with the OS package, so it
-  works on a machine that has never had network access.
+- **RapidOCR** — default. The PP-OCR models compiled to ONNX with the weights
+  **inside the wheel**, so it works offline on first run with no download. Returns
+  per-line quads, which become real bounding-box citation anchors.
+- **PaddleOCR** — optional (`pip install -e ".[paddle]"`). Upstream runtime; needs
+  a first-run weight download and pulls the heavy `paddlex` tree.
+- **Tesseract** — fallback. Its language data ships with the OS package.
 
-`DUCKDOCS_OCR_ENGINE=auto|paddleocr|tesseract`. `auto` prefers Paddle and falls
-back rather than failing ingestion.
+`DUCKDOCS_OCR_ENGINE=auto|rapidocr|paddleocr|tesseract`. `auto` prefers RapidOCR
+and falls back rather than failing ingestion.
 
 Scanned pages are recognized in **batches** (`DUCKDOCS_OCR_BATCH_SIZE`), not one
 call per page — this is what makes long scanned documents tolerable. Every page
@@ -114,7 +134,10 @@ of a scanned document is processed; there is no page cap.
    `outcome: "insufficient_evidence"`, not an error.
 6. **Bounding boxes are normalized** (0–1, top-left origin) so they stay valid at
    any render DPI.
-7. **A summary states how it was made.** `extractive` is verbatim document
+7. **A streamed answer is not a committed answer.** Tokens render as a draft;
+   only the terminal `done` payload — which carries the citations — becomes a
+   transcript turn. A stopped stream produces an explicit "nothing was cited".
+8. **A summary states how it was made.** `extractive` is verbatim document
    sentences; `abstractive` is model output. The UI labels which, because they
    warrant different levels of trust. Summarization never fails an ingest — the
    extractive result is the floor when a model is absent or errors.
@@ -135,22 +158,27 @@ of a scanned document is processed; there is no page cap.
   authored in-repo rather than installed, so they can be edited freely.
 - Every interactive element needs hover / focus-visible / disabled states and an
   accessible name.
-- Tests exercise real code paths (real Tesseract, real PyMuPDF). PaddleOCR is
-  tested against a stubbed reader because its weights can't be assumed present.
+- Tests exercise real code paths: real Tesseract, real RapidOCR, real PyMuPDF,
+  real Alembic against SQLite. PaddleOCR is the exception — it is tested against a
+  stubbed reader because its weights can't be assumed present.
 
 ## Current state
 
 Working: ingestion for PDF/DOCX/XLSX/PPTX/images/CSV/HTML/text/code, local OCR
-with confidence + bboxes, keyword and vector retrieval, grounding gate with
-citation binding, page-image preview endpoint, full UI across 4 surfaces + landing.
+with confidence + bboxes, ingest-time summaries, keyword and vector retrieval,
+grounding gate with citation binding, streamed answers, page-image preview,
+interrupted-ingest recovery + retry, full UI across 4 surfaces + landing.
 
 **Known gaps** (deliberate, not oversights):
 - Legacy DOC/PPT/XLS (needs LibreOffice conversion in the worker)
 - OCR deskew/denoise (needs OpenCV; only grayscale + autocontrast today)
 - Table-structure OCR for scanned tables
 - OCR language auto-detection
-- `main.py` is approaching the size where it should split into routers
-- No frontend test suite
+- `/ask/stream` computes the whole answer, then replays it as tokens. Real
+  token-by-token streaming needs the provider layer to expose a streaming call.
+- Ingestion is in-process. Surviving a crash *mid-document* (rather than just
+  reporting it) needs an out-of-process worker with a durable queue.
+- No systematic a11y audit of the Review and Settings surfaces
 
 ## Gotchas
 
@@ -160,5 +188,12 @@ citation binding, page-image preview endpoint, full UI across 4 surfaces + landi
   in tests that patch availability.
 - `next/font/google` needs network at build time (it self-hosts afterwards).
 - Chroma prints telemetry errors on startup; harmless, unrelated to our code.
-- PaddleOCR pulls a heavy transitive tree via `paddlex` (langchain, openai,
-  pandas). Unused at runtime, but it inflates the image — worth revisiting.
+- The preview cache keys on **path + mtime + size**, so a replaced file is never
+  served stale. Call `clear_preview_cache()` in tests that assert on it.
+- PyMuPDF `Document` objects are not thread-safe and previews run in a thread
+  pool, so the cache is behind a lock. Don't hand a cached handle out.
+- `Base.metadata.create_all` cannot add a column to an existing table. Any schema
+  change needs a migration; `create_all` now only covers a first-run database
+  where Alembic is somehow unavailable.
+- `PIL.ImageSequence.Iterator` yields the *same* object seeked to each frame, so
+  `list(...)` gives N references to the last frame. Use `image.seek(n)`.

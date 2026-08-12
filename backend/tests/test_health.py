@@ -5,8 +5,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from app.api.dependencies import get_registry, get_repository, get_runtime_settings, get_vector_store
 from app.core.config import Settings
-from app.main import app, get_registry, get_repository, get_runtime_settings, get_vector_store
+from app.main import app
 from app.providers.extractive import ExtractiveChatAdapter
 from app.providers.registry import ProviderConfig, ProviderRegistry
 from app.repositories.memory import DocumentRepository

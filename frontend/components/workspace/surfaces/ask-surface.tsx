@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, ArrowUp, Copy, FileText, LockKeyhole, Paperclip } from 'lucide-react';
+import { AlertTriangle, ArrowUp, Copy, FileText, LockKeyhole, Paperclip, Square } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Button, EmptyState, useToast } from '@/components/ui';
 import { CitationList } from '@/components/workspace/citations';
@@ -23,7 +23,7 @@ function prefersReducedMotion(): boolean {
 }
 
 export function AskSurface() {
-  const { messages, asking, ask, documents, uploadDocuments, selectEvidence, evidence, connection } =
+  const { messages, asking, draft, ask, stopAsking, documents, uploadDocuments, selectEvidence, evidence, connection } =
     useWorkspace();
   const { notify } = useToast();
 
@@ -46,7 +46,7 @@ export function AskSurface() {
     if (!node) return;
     if (node.scrollHeight - node.scrollTop - node.clientHeight > 240) return;
     node.scrollTo({ top: node.scrollHeight, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
-  }, [messages.length, asking]);
+  }, [messages.length, asking, draft]);
 
   // Grow the composer with its content, up to a capped height.
   useEffect(() => {
@@ -107,16 +107,25 @@ export function AskSurface() {
           )}
 
           {asking ? (
-            <div className="mb-8 animate-slide-up">
+            <div className="mb-8 animate-slide-up" aria-live="polite" aria-busy="true">
               <p className="mb-3 text-xs font-semibold text-foreground">DuckDocs</p>
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span className="flex gap-1" aria-hidden>
-                  <i className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:0ms]" />
-                  <i className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:150ms]" />
-                  <i className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:300ms]" />
-                </span>
-                Retrieving evidence
-              </p>
+              {draft ? (
+                // Streamed text is provisional: citations only exist once the
+                // terminal event lands, so this deliberately renders without them.
+                <p className="text-base leading-[1.7] text-foreground">
+                  {draft}
+                  <i className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse rounded-full bg-primary align-baseline" />
+                </p>
+              ) : (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="flex gap-1" aria-hidden>
+                    <i className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                    <i className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                    <i className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:300ms]" />
+                  </span>
+                  Retrieving evidence
+                </p>
+              )}
             </div>
           ) : null}
         </div>
@@ -159,7 +168,9 @@ export function AskSurface() {
             }}
             className={cn(
               'rounded-2xl bg-card shadow-md ring-1 ring-inset transition-all duration-200 ease-spring',
-              dragging ? 'ring-2 ring-primary' : 'ring-border focus-within:ring-border-strong',
+              dragging
+                ? 'ring-2 ring-primary'
+                : 'ring-border focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
             )}
           >
             <textarea
@@ -175,7 +186,9 @@ export function AskSurface() {
                   submit();
                 }
               }}
-              className="block w-full resize-none bg-transparent px-4 pb-2 pt-4 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/70"
+              // The card carries the focus ring; a second one around just the
+              // textarea reads as a misaligned box inside the control.
+              className="block w-full resize-none bg-transparent px-4 pb-2 pt-4 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:ring-0 focus-visible:ring-offset-0"
             />
             <div className="flex items-center justify-between gap-3 p-2 pl-3">
               <Button
@@ -196,16 +209,29 @@ export function AskSurface() {
                 className="sr-only"
                 onChange={(event) => void addFiles(event.target.files)}
               />
-              <Button
-                type="submit"
-                variant="primary"
-                size="sm"
-                className="size-9 rounded-full p-0"
-                disabled={!question.trim() || asking}
-                aria-label="Send"
-              >
-                <ArrowUp className="size-4" strokeWidth={2.4} />
-              </Button>
+              {asking ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="size-9 rounded-full p-0"
+                  onClick={stopAsking}
+                  aria-label="Stop generating"
+                >
+                  <Square className="size-3" fill="currentColor" strokeWidth={0} />
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  className="size-9 rounded-full p-0"
+                  disabled={!question.trim()}
+                  aria-label="Send"
+                >
+                  <ArrowUp className="size-4" strokeWidth={2.4} />
+                </Button>
+              )}
             </div>
           </form>
 
