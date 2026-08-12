@@ -2,6 +2,7 @@
 
 import { Highlighter, LibraryBig, MessageSquareText, Search, Settings2, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { cn } from '@/lib/utils';
 import type { Surface } from '@/lib/types';
 
 interface Command {
@@ -62,16 +63,16 @@ export function CommandPalette({
 
   return (
     <div
-      className="palette-overlay"
+      className="fixed inset-0 z-[80] flex animate-fade-in items-start justify-center bg-black/40 px-4 pb-4 pt-[12vh] backdrop-blur-[2px]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <div
-        className="palette"
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
+        className="w-full max-w-lg animate-scale-in overflow-hidden rounded-2xl bg-popover shadow-xl ring-1 ring-inset ring-border"
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.preventDefault();
@@ -88,35 +89,41 @@ export function CommandPalette({
           }
         }}
       >
-        <div className="palette-input">
-          <Search size={16} strokeWidth={1.8} aria-hidden="true" />
+        <div className="flex items-center gap-3 border-b border-border px-4 py-3.5 text-muted-foreground">
+          <Search className="size-4 shrink-0" aria-hidden />
           <input
             ref={inputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search commands…"
             aria-label="Search commands"
+            className="flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground/70"
           />
         </div>
         {results.length === 0 ? (
-          <p className="palette-empty">No matching commands.</p>
+          <p className="px-6 py-8 text-center text-sm text-muted-foreground">No matching commands.</p>
         ) : (
-          <div className="palette-list" role="listbox" aria-label="Commands">
+          <div role="listbox" aria-label="Commands" className="max-h-80 overflow-y-auto p-2">
             {results.map((command, index) => {
               const Icon = command.icon;
               return (
                 <button
                   key={command.id}
-                  className="palette-item"
                   role="option"
                   aria-selected={index === active}
-                  data-active={index === active}
                   onMouseEnter={() => setActive(index)}
                   onClick={() => commit(index)}
+                  className={cn(
+                    'flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm transition-colors duration-fast',
+                    index === active ? 'bg-primary/10 text-foreground' : 'text-muted-foreground',
+                  )}
                 >
-                  <Icon size={16} strokeWidth={1.7} aria-hidden="true" />
-                  <span>{command.label}</span>
-                  <span className="mono">{command.hint}</span>
+                  <Icon
+                    className={cn('size-4 shrink-0', index === active ? 'text-primary' : 'text-muted-foreground')}
+                    aria-hidden
+                  />
+                  <span className="flex-1">{command.label}</span>
+                  <span className="font-mono text-2xs opacity-60">{command.hint}</span>
                 </button>
               );
             })}

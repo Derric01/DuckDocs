@@ -15,8 +15,19 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
-import { Badge, EmptyState, Progress, Skeleton } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Input,
+  Progress,
+  Skeleton,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
+import { cn } from '@/lib/utils';
 import type { DocumentRecord, DocumentStatus } from '@/lib/types';
 
 const ACCEPT =
@@ -24,11 +35,14 @@ const ACCEPT =
 
 type Filter = 'all' | 'ready' | 'attention';
 
-const STATUS: Record<DocumentStatus, { label: string; tone: 'success' | 'warning' | 'danger' | 'neutral'; icon: LucideIcon; spin?: boolean }> = {
+const STATUS: Record<
+  DocumentStatus,
+  { label: string; tone: 'success' | 'warning' | 'destructive' | 'neutral'; icon: LucideIcon; spin?: boolean }
+> = {
   ready: { label: 'Ready', tone: 'success', icon: Check },
   processing: { label: 'Processing', tone: 'neutral', icon: LoaderCircle, spin: true },
   review: { label: 'Needs review', tone: 'warning', icon: AlertCircle },
-  failed: { label: 'Failed', tone: 'danger', icon: AlertCircle },
+  failed: { label: 'Failed', tone: 'destructive', icon: AlertCircle },
 };
 
 /** Raw pipeline stage names are internal; the row shows what is happening. */
@@ -64,7 +78,7 @@ export function LibrarySurface() {
     () => ({
       all: documents.length,
       ready: documents.filter((document) => document.status === 'ready').length,
-      attention: documents.filter((document) => document.status === 'review' || document.status === 'failed').length,
+      attention: documents.filter((d) => d.status === 'review' || d.status === 'failed').length,
     }),
     [documents],
   );
@@ -93,32 +107,27 @@ export function LibrarySurface() {
   const totalPages = documents.reduce((total, document) => total + document.pages, 0);
 
   return (
-    <div className="surface surface-narrow">
-      <header className="surface-head">
-        <div className="surface-head-row">
-          <div>
-            <h2>Library</h2>
-            <p>
-              {documents.length} document{documents.length === 1 ? '' : 's'} · {totalPages} indexed page
-              {totalPages === 1 ? '' : 's'} · stored on this machine
-            </p>
-          </div>
-          <div className="head-actions">
-            <button
-              className="btn btn-primary"
-              onClick={() => inputRef.current?.click()}
-              disabled={uploading || connection === 'offline'}
-            >
-              <Upload size={15} strokeWidth={1.8} aria-hidden="true" />
-              Add documents
-            </button>
-          </div>
+    <div className="mx-auto max-w-4xl px-8 pb-16 pt-8 max-sm:px-4 max-sm:pt-5">
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Library</h2>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {documents.length} document{documents.length === 1 ? '' : 's'} · {totalPages} indexed page
+            {totalPages === 1 ? '' : 's'} · stored on this machine
+          </p>
         </div>
+        <Button
+          variant="primary"
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading || connection === 'offline'}
+        >
+          <Upload className="size-4" aria-hidden />
+          Add documents
+        </Button>
       </header>
 
       <button
         type="button"
-        className={`dropzone ${dragging ? 'dragging' : ''}`}
         onClick={() => inputRef.current?.click()}
         onDragEnter={(event) => {
           event.preventDefault();
@@ -134,13 +143,26 @@ export function LibrarySurface() {
           setDragging(false);
           void addFiles(event.dataTransfer.files);
         }}
+        className={cn(
+          'flex w-full items-center gap-4 rounded-2xl border-2 border-dashed p-5 text-left',
+          'transition-all duration-200 ease-spring active:scale-[0.995]',
+          dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-border-strong hover:bg-card',
+        )}
       >
-        <span className="dropzone-icon" aria-hidden="true">
-          {uploading ? <LoaderCircle size={17} className="spin" /> : <Upload size={17} strokeWidth={1.7} />}
+        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground">
+          {uploading ? (
+            <LoaderCircle className="size-5 animate-spin" />
+          ) : (
+            <Upload className="size-5" strokeWidth={1.8} />
+          )}
         </span>
-        <span className="dropzone-copy">
-          <strong>{uploading ? 'Adding to your library…' : 'Drop files here, or browse'}</strong>
-          <span>PDF, Office, images, and text. Scans are recognized with local OCR.</span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium text-foreground">
+            {uploading ? 'Adding to your library…' : 'Drop files here, or browse'}
+          </span>
+          <span className="block text-xs text-muted-foreground">
+            PDF, Office, images, and text. Scans are recognized with local OCR.
+          </span>
         </span>
       </button>
       <input
@@ -148,52 +170,47 @@ export function LibrarySurface() {
         type="file"
         multiple
         accept={ACCEPT}
-        className="visually-hidden"
+        className="sr-only"
         onChange={(event) => void addFiles(event.target.files)}
       />
 
-      <div className="toolbar">
-        <div className="tabs" role="tablist" aria-label="Filter documents">
-          {(
-            [
-              ['all', 'All'],
-              ['ready', 'Ready'],
-              ['attention', 'Needs attention'],
-            ] as Array<[Filter, string]>
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              className="tab"
-              role="tab"
-              aria-selected={filter === value}
-              onClick={() => setFilter(value)}
-            >
-              {label}
-              <span className="tab-count">{counts[value]}</span>
-            </button>
-          ))}
-        </div>
-        <label className="search">
-          <Search size={14} strokeWidth={1.8} aria-hidden="true" />
-          <input
+      <div className="mb-3 mt-6 flex flex-wrap items-center justify-between gap-3">
+        <Tabs value={filter} onValueChange={(value) => setFilter(value as Filter)}>
+          <TabsList>
+            {(
+              [
+                ['all', 'All'],
+                ['ready', 'Ready'],
+                ['attention', 'Needs attention'],
+              ] as Array<[Filter, string]>
+            ).map(([value, label]) => (
+              <TabsTrigger key={value} value={value}>
+                {label}
+                <span className="font-mono text-[10px] tabular-nums opacity-60">{counts[value]}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+
+        <div className="relative w-full sm:w-56">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Filter by name"
             aria-label="Filter documents by name"
+            className="h-9 pl-8 text-sm"
           />
-        </label>
+        </div>
       </div>
 
       {documentsLoading ? (
-        <div className="doc-table">
+        <div className="space-y-2">
           {[0, 1, 2].map((row) => (
-            <div className="doc-row" key={row}>
-              <Skeleton height={16} />
-              <Skeleton height={16} />
-              <Skeleton height={16} />
-              <Skeleton height={16} />
-              <span />
-            </div>
+            <Skeleton key={row} className="h-16 rounded-xl" />
           ))}
         </div>
       ) : visible.length === 0 ? (
@@ -207,22 +224,15 @@ export function LibrarySurface() {
           }
           action={
             documents.length ? undefined : (
-              <button className="btn btn-primary" onClick={() => inputRef.current?.click()}>
-                <Upload size={15} strokeWidth={1.8} aria-hidden="true" />
+              <Button variant="primary" size="lg" onClick={() => inputRef.current?.click()}>
+                <Upload className="size-4" aria-hidden />
                 Add documents
-              </button>
+              </Button>
             )
           }
         />
       ) : (
-        <div className="doc-table" role="table" aria-label="Documents">
-          <div className="doc-head" role="row">
-            <span role="columnheader">Name</span>
-            <span role="columnheader">Fidelity</span>
-            <span role="columnheader">Status</span>
-            <span role="columnheader">Updated</span>
-            <span aria-hidden="true" />
-          </div>
+        <div className="list-group">
           {visible.map((document) => (
             <DocumentRow key={document.id} document={document} onOpen={() => void inspectDocument(document)} />
           ))}
@@ -238,38 +248,36 @@ function DocumentRow({ document, onOpen }: { document: DocumentRecord; onOpen: (
   const StatusIcon = status.icon;
   const processing = document.status === 'processing';
   const [expanded, setExpanded] = useState(false);
-
   const hasSummary = Boolean(document.summary);
 
   return (
-    <div className="doc-entry">
-      <div className="doc-row" role="row">
+    <div className="border-b border-border/70 last:border-b-0">
+      <div className="flex min-h-[60px] items-center gap-3 px-4 transition-colors duration-fast hover:bg-muted/40">
         <button
-          className="doc-name doc-name-button"
-          role="cell"
           onClick={() => (hasSummary ? setExpanded((value) => !value) : onOpen())}
           aria-expanded={hasSummary ? expanded : undefined}
+          className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
         >
-          <span className="doc-icon" aria-hidden="true">
-            <Icon size={15} strokeWidth={1.7} />
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+            <Icon className="size-4" strokeWidth={1.8} aria-hidden />
           </span>
-          <span className="doc-name-copy">
-            <strong>{document.name}</strong>
-            <small>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium text-foreground">{document.name}</span>
+            <span className="block truncate text-2xs text-muted-foreground">
               {document.type} · {document.size} · {document.pages} page{document.pages === 1 ? '' : 's'}
-            </small>
+            </span>
           </span>
         </button>
 
-        <span className="doc-fidelity" role="cell">
-          <Badge tone={document.fidelity === 'OCR dependent' ? 'accent' : 'neutral'}>{document.fidelity}</Badge>
+        <span className="hidden shrink-0 md:block">
+          <Badge tone={document.fidelity === 'OCR dependent' ? 'primary' : 'neutral'}>{document.fidelity}</Badge>
         </span>
 
-        <span className="doc-status" role="cell">
+        <span className="w-[108px] shrink-0 max-sm:w-auto">
           {processing && typeof document.progress === 'number' ? (
-            <span className="doc-progress">
+            <span className="flex items-center gap-2">
               <Progress value={document.progress} label={`Ingest progress for ${document.name}`} />
-              <span className="mono">{document.progress}%</span>
+              <span className="font-mono text-2xs tabular-nums text-muted-foreground">{document.progress}%</span>
             </span>
           ) : (
             <Badge tone={status.tone} icon={StatusIcon} spinning={status.spin}>
@@ -278,29 +286,35 @@ function DocumentRow({ document, onOpen }: { document: DocumentRecord; onOpen: (
           )}
         </span>
 
-        <span className="doc-updated" role="cell">
-          {processing && document.stage ? STAGE_LABEL[document.stage] ?? document.stage : document.updated}
+        <span className="hidden w-[92px] shrink-0 text-xs text-muted-foreground lg:block">
+          {processing && document.stage ? (STAGE_LABEL[document.stage] ?? document.stage) : document.updated}
         </span>
 
-        <button className="doc-open" onClick={onOpen} aria-label={`Open evidence for ${document.name}`}>
-          <ChevronRight size={15} strokeWidth={1.8} className="doc-chevron" aria-hidden="true" />
+        <button
+          onClick={onOpen}
+          aria-label={`Open evidence for ${document.name}`}
+          className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground"
+        >
+          <ChevronRight className="size-4" aria-hidden />
         </button>
       </div>
 
       {hasSummary && expanded ? (
-        <div className="doc-summary">
-          <div className="doc-summary-head">
-            <Sparkles size={13} strokeWidth={1.8} aria-hidden="true" />
-            <span className="kicker">Summary</span>
-            {/* An extractive summary is verbatim document text; an abstractive
-                one is model output. The distinction changes how much a reader
-                should trust the wording, so it is always labeled. */}
+        <div className="animate-slide-down px-4 pb-4 pl-[64px] max-sm:pl-4">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-muted-foreground">
+            <Sparkles className="size-3.5" aria-hidden />
+            <span className="text-2xs font-semibold uppercase tracking-wider">Summary</span>
+            {/* Extractive is verbatim document text; abstractive is model
+                output. That changes how much a reader should trust the
+                wording, so it is always labeled. */}
             <Badge tone={document.summaryMethod === 'abstractive' ? 'warning' : 'neutral'}>
               {document.summaryMethod === 'abstractive' ? 'Model written' : 'From the document'}
             </Badge>
-            {document.summaryProvider ? <span className="mono">{document.summaryProvider}</span> : null}
+            {document.summaryProvider ? (
+              <span className="font-mono text-2xs opacity-70">{document.summaryProvider}</span>
+            ) : null}
           </div>
-          <p>{document.summary}</p>
+          <p className="max-w-[76ch] text-sm leading-relaxed text-muted-foreground">{document.summary}</p>
         </div>
       ) : null}
     </div>

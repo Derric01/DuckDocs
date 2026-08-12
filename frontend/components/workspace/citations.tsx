@@ -4,13 +4,14 @@
  * Citation rendering for answers.
  *
  * Retrieval frequently returns several passages from the same document, so a
- * flat list repeats the filename and buries how many distinct sources actually
- * support an answer. Citations are therefore grouped by document and
- * deduplicated by evidence id, with per-passage rows underneath.
+ * flat list repeats the filename and buries how many distinct sources support
+ * an answer. Citations are grouped by document and deduplicated by evidence
+ * id, with per-passage rows underneath.
  */
 
 import { ChevronDown, FileText, ScanText } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { cn } from '@/lib/utils';
 import type { EvidenceRecord } from '@/lib/types';
 
 const LOW_CONFIDENCE = 0.6;
@@ -52,7 +53,6 @@ export function groupCitations(citations: EvidenceRecord[]): CitationGroup[] {
     }
   }
 
-  // Sort pages within a document so passages read in document order.
   for (const group of groups.values()) {
     group.passages.sort((a, b) => a.page - b.page);
   }
@@ -71,13 +71,12 @@ export function CitationList({
   const groups = useMemo(() => groupCitations(citations), [citations]);
   if (groups.length === 0) return null;
 
-  const totalPassages = groups.reduce((total, group) => total + group.passages.length, 0);
+  const total = groups.reduce((sum, group) => sum + group.passages.length, 0);
 
   return (
-    <section className="citations" aria-label="Sources">
-      <p className="citations-summary">
-        {totalPassages} passage{totalPassages === 1 ? '' : 's'} from {groups.length} document
-        {groups.length === 1 ? '' : 's'}
+    <section aria-label="Sources" className="mt-5 space-y-2">
+      <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+        {total} passage{total === 1 ? '' : 's'} from {groups.length} document{groups.length === 1 ? '' : 's'}
       </p>
       {groups.map((group) => (
         <CitationCard key={group.documentId} group={group} activeId={activeId} onSelect={onSelect} />
@@ -102,12 +101,15 @@ function CitationCard({
 
   const isOcr = group.minConfidence !== null;
   const isLow = group.minConfidence !== null && group.minConfidence < LOW_CONFIDENCE;
-  const pageRange = pageSummary(group.passages);
 
   return (
-    <article className={`citation-card ${isLow ? 'is-low' : ''}`}>
+    <div
+      className={cn(
+        'overflow-hidden rounded-xl bg-card shadow-xs ring-1 ring-inset transition-all duration-fast',
+        isLow ? 'ring-warning/40' : 'ring-border hover:ring-border-strong',
+      )}
+    >
       <button
-        className="citation-card-head"
         aria-expanded={open}
         onClick={() => {
           if (single) {
@@ -117,57 +119,74 @@ function CitationCard({
           }
           setOpen((value) => !value);
         }}
+        className="flex w-full items-center gap-3 p-3 text-left transition-colors duration-fast hover:bg-muted/50"
       >
-        <span className="citation-card-icon" aria-hidden="true">
-          {isOcr ? <ScanText size={14} strokeWidth={1.7} /> : <FileText size={14} strokeWidth={1.7} />}
+        <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+          {isOcr ? <ScanText className="size-3.5" aria-hidden /> : <FileText className="size-3.5" aria-hidden />}
         </span>
-        <span className="citation-card-copy">
-          <strong>{group.documentName}</strong>
-          <span className="mono">{pageRange}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-foreground">{group.documentName}</span>
+          <span className="block font-mono text-2xs text-muted-foreground">{pageSummary(group.passages)}</span>
         </span>
+
         {isOcr ? (
           <span
-            className={`confidence-pip ${isLow ? 'low' : ''}`}
             title={`Lowest OCR confidence in this source: ${Math.round((group.minConfidence ?? 0) * 100)}%`}
+            className="h-1 w-7 shrink-0 overflow-hidden rounded-full bg-muted"
           >
-            <span className="confidence-pip-fill" style={{ width: `${(group.minConfidence ?? 0) * 100}%` }} />
+            {/* A track rather than a number: the exact value lives in the
+                evidence panel, this only needs to convey trust at a glance. */}
+            <span
+              className={cn('block h-full rounded-full', isLow ? 'bg-warning' : 'bg-success')}
+              style={{ width: `${(group.minConfidence ?? 0) * 100}%` }}
+            />
           </span>
         ) : null}
+
         {!single ? (
           <ChevronDown
-            size={14}
-            strokeWidth={1.8}
-            className="citation-card-chevron"
-            data-open={open}
-            aria-hidden="true"
+            className={cn(
+              'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ease-spring',
+              open && 'rotate-180',
+            )}
+            aria-hidden
           />
         ) : null}
       </button>
 
       {open && !single ? (
-        <ul className="citation-passages">
+        <ul className="animate-slide-down space-y-0.5 px-2 pb-2">
           {group.passages.map((passage) => (
             <li key={passage.id}>
               <button
-                className="citation-passage"
-                data-active={passage.id === activeId}
                 onClick={() => onSelect(passage)}
+                className={cn(
+                  'flex w-full items-baseline gap-3 rounded-lg px-2 py-2 text-left transition-colors duration-fast',
+                  passage.id === activeId ? 'bg-primary/10' : 'hover:bg-muted',
+                )}
               >
-                <span className="mono citation-passage-page">p{passage.page}</span>
-                <span className="citation-passage-text">{passage.snippet}</span>
+                <span className="shrink-0 font-mono text-2xs tabular-nums text-primary">p{passage.page}</span>
+                <span
+                  className={cn(
+                    'line-clamp-2 text-xs leading-snug',
+                    passage.id === activeId ? 'text-foreground' : 'text-muted-foreground',
+                  )}
+                >
+                  {passage.snippet}
+                </span>
               </button>
             </li>
           ))}
         </ul>
       ) : null}
-    </article>
+    </div>
   );
 }
 
 function pageSummary(passages: EvidenceRecord[]): string {
   const pages = [...new Set(passages.map((passage) => passage.page))].sort((a, b) => a - b);
   if (pages.length === 0) return '';
-  if (pages.length === 1) return `p${pages[0]}`;
-  if (pages.length <= 3) return pages.map((page) => `p${page}`).join(', ');
-  return `p${pages[0]}–p${pages[pages.length - 1]} · ${pages.length} pages`;
+  if (pages.length === 1) return `Page ${pages[0]}`;
+  if (pages.length <= 3) return `Pages ${pages.join(', ')}`;
+  return `Pages ${pages[0]}–${pages[pages.length - 1]} · ${pages.length} total`;
 }

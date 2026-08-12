@@ -19,7 +19,8 @@ import {
   RotateCw,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IconButton, Skeleton } from '@/components/ui';
+import { Button, Skeleton } from '@/components/ui';
+import { cn } from '@/lib/utils';
 import { duckDocsApi } from '@/lib/api/client';
 import type { BBox } from '@/lib/types';
 
@@ -146,86 +147,82 @@ export function PageViewer({
   };
 
   return (
-    <div className="viewer" onKeyDown={onKeyDown} tabIndex={-1}>
-      <div className="viewer-toolbar">
-        <div className="viewer-pager">
-          <IconButton
-            icon={ChevronLeft}
-            label="Previous page"
-            size={15}
-            disabled={page <= 1}
-            onClick={() => goTo(page - 1)}
-          />
-          <span className="viewer-page-label">
+    <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown} tabIndex={-1}>
+      <div className="material sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border px-2 py-1.5">
+        <div className="flex items-center gap-0.5">
+          <Button
+            variant="ghost" size="sm" className="size-8 p-0"
+            aria-label="Previous page" disabled={page <= 1} onClick={() => goTo(page - 1)}
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <input
-              type="number"
-              className="viewer-page-input mono"
-              value={page}
-              min={1}
-              max={pageCount}
+              type="number" value={page} min={1} max={pageCount}
               aria-label={`Page number, ${pageCount} total`}
               onChange={(event) => {
                 const next = Number.parseInt(event.target.value, 10);
                 if (!Number.isNaN(next)) goTo(next);
               }}
+              className="h-7 w-10 rounded-md bg-transparent text-center font-mono text-xs tabular-nums text-foreground outline-none transition-colors hover:bg-muted focus:bg-secondary"
             />
-            <span className="mono">/ {pageCount}</span>
+            <span className="font-mono tabular-nums">/ {pageCount}</span>
           </span>
-          <IconButton
-            icon={ChevronRight}
-            label="Next page"
-            size={15}
-            disabled={page >= pageCount}
-            onClick={() => goTo(page + 1)}
-          />
+          <Button
+            variant="ghost" size="sm" className="size-8 p-0"
+            aria-label="Next page" disabled={page >= pageCount} onClick={() => goTo(page + 1)}
+          >
+            <ChevronRight className="size-4" />
+          </Button>
         </div>
 
-        <div className="viewer-zoom">
-          <IconButton icon={Minus} label="Zoom out" size={15} onClick={() => stepZoom(-1)} />
+        <div className="flex items-center gap-0.5">
+          <Button variant="ghost" size="sm" className="size-8 p-0" aria-label="Zoom out" onClick={() => stepZoom(-1)}>
+            <Minus className="size-4" />
+          </Button>
           <button
-            className="viewer-zoom-value mono"
             onClick={() => setFit('width')}
             title="Reset to fit width (0)"
             aria-label={`Zoom ${Math.round(scale * 100)} percent. Reset to fit width.`}
+            className="h-7 min-w-[52px] rounded-md px-1.5 font-mono text-2xs tabular-nums text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             {/* A raw percentage while fitting reads as broken ("29%") even
                 though it is accurate; name the mode instead. */}
             {fit === 'custom' ? `${Math.round(scale * 100)}%` : fit === 'page' ? 'Fit page' : 'Fit'}
           </button>
-          <IconButton icon={Plus} label="Zoom in" size={15} onClick={() => stepZoom(1)} />
-          <IconButton
-            icon={Maximize2}
-            label="Fit page"
-            size={15}
-            aria-pressed={fit === 'page'}
+          <Button variant="ghost" size="sm" className="size-8 p-0" aria-label="Zoom in" onClick={() => stepZoom(1)}>
+            <Plus className="size-4" />
+          </Button>
+          <Button
+            variant={fit === 'page' ? 'subtle' : 'ghost'} size="sm" className="size-8 p-0"
+            aria-label="Fit page" aria-pressed={fit === 'page'}
             onClick={() => setFit(fit === 'page' ? 'width' : 'page')}
-          />
+          >
+            <Maximize2 className="size-4" />
+          </Button>
         </div>
       </div>
 
-      <div className="viewer-viewport" ref={viewportRef}>
+      <div ref={viewportRef} className="flex-1 overflow-auto overscroll-contain bg-background p-4">
         {status === 'error' ? (
-          <div className="viewer-message">
-            <AlertCircle size={16} strokeWidth={1.8} aria-hidden="true" />
-            <p>This page could not be rendered.</p>
-            <button className="btn btn-secondary btn-sm" onClick={() => setStatus('loading')}>
-              <RotateCw size={13} strokeWidth={1.8} aria-hidden="true" />
+          <div className="flex flex-col items-center gap-3 px-4 py-16 text-center">
+            <AlertCircle className="size-5 text-muted-foreground" aria-hidden />
+            <p className="text-sm text-muted-foreground">This page could not be rendered.</p>
+            <Button size="sm" onClick={() => setStatus('loading')}>
+              <RotateCw className="size-3.5" aria-hidden />
               Retry
-            </button>
+            </Button>
           </div>
         ) : (
           <div
-            className="viewer-canvas"
-            style={
-              naturalSize
-                ? { width: naturalSize.width * scale, height: naturalSize.height * scale }
-                : undefined
-            }
+            className="gpu relative mx-auto overflow-hidden rounded-lg shadow-lg"
+            style={naturalSize ? { width: naturalSize.width * scale, height: naturalSize.height * scale } : undefined}
           >
             {status === 'loading' ? (
-              <div className="viewer-skeleton" aria-hidden="true">
-                <Skeleton height={naturalSize ? naturalSize.height * scale : 420} />
-              </div>
+              <Skeleton
+                className="absolute inset-0 rounded-lg"
+                style={{ height: naturalSize ? naturalSize.height * scale : 460 }}
+              />
             ) : null}
 
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -233,8 +230,6 @@ export function PageViewer({
               key={src}
               src={src}
               alt={`${documentName}, page ${page}`}
-              className="viewer-image"
-              data-state={status}
               draggable={false}
               onLoad={(event) => {
                 const image = event.currentTarget;
@@ -242,12 +237,16 @@ export function PageViewer({
                 setStatus('ready');
               }}
               onError={() => setStatus('error')}
+              className={cn(
+                'block h-full w-full rounded-lg transition-opacity duration-200 ease-spring',
+                status === 'ready' ? 'opacity-100' : 'opacity-0',
+              )}
             />
 
             {highlight && status === 'ready' ? (
               <span
-                className="viewer-highlight"
-                aria-hidden="true"
+                aria-hidden
+                className="pointer-events-none absolute z-10 animate-scale-in rounded-[3px] bg-primary/25 ring-2 ring-primary shadow-[0_0_0_9999px_rgba(0,0,0,0.3)]"
                 style={{
                   left: `${highlight[0] * 100}%`,
                   top: `${highlight[1] * 100}%`,
@@ -260,7 +259,9 @@ export function PageViewer({
         )}
       </div>
 
-      <p className="viewer-hint mono">← → page · +/− zoom · 0 fit</p>
+      <p className="shrink-0 border-t border-border px-3 py-1.5 text-center font-mono text-2xs text-muted-foreground/70">
+        ← → page · +/− zoom · 0 fit
+      </p>
     </div>
   );
 }

@@ -5,16 +5,17 @@
  *
  * The panel doubles as a document viewer, so a fixed width is either too
  * narrow to read a page or too wide for the conversation. Width persists per
- * browser and is also adjustable from the keyboard, since a pointer-only
- * resize would be inaccessible.
+ * browser and is adjustable from the keyboard, since a pointer-only resize
+ * would be inaccessible.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { cn } from '@/lib/utils';
 
 const STORAGE_KEY = 'duckdocs.panelWidth';
 export const PANEL_MIN = 320;
 export const PANEL_MAX = 880;
-export const PANEL_DEFAULT = 420;
+export const PANEL_DEFAULT = 440;
 
 export function readPanelWidth(): number {
   if (typeof window === 'undefined') return PANEL_DEFAULT;
@@ -27,7 +28,7 @@ export function usePanelWidth(): [number, (width: number) => void] {
   const [width, setWidthState] = useState(PANEL_DEFAULT);
 
   // Read after mount: localStorage is unavailable during SSR and reading it
-  // in the initial state would cause a hydration mismatch.
+  // in initial state would cause a hydration mismatch.
   useEffect(() => {
     setWidthState(readPanelWidth());
   }, []);
@@ -45,13 +46,7 @@ export function usePanelWidth(): [number, (width: number) => void] {
   return [width, setWidth];
 }
 
-export function ResizeHandle({
-  width,
-  onResize,
-}: {
-  width: number;
-  onResize: (width: number) => void;
-}) {
+export function ResizeHandle({ width, onResize }: { width: number; onResize: (width: number) => void }) {
   const [dragging, setDragging] = useState(false);
   const frame = useRef<number | null>(null);
 
@@ -72,7 +67,6 @@ export function ResizeHandle({
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', stop);
     window.addEventListener('pointercancel', stop);
-    // Stop text selection and cursor flicker while dragging.
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
 
@@ -89,8 +83,6 @@ export function ResizeHandle({
 
   return (
     <div
-      className="resize-handle"
-      data-dragging={dragging}
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize evidence panel"
@@ -115,6 +107,18 @@ export function ResizeHandle({
           onResize(PANEL_DEFAULT);
         }
       }}
-    />
+      className={cn(
+        'group relative z-10 -mr-0.5 w-1.5 shrink-0 cursor-col-resize touch-none outline-none max-lg:hidden',
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'absolute inset-y-0 left-0.5 w-0.5 rounded-full transition-colors duration-fast',
+          'group-hover:bg-primary group-focus-visible:bg-primary',
+          dragging ? 'bg-primary' : 'bg-transparent',
+        )}
+      />
+    </div>
   );
 }

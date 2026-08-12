@@ -58,10 +58,12 @@ backend/app/
     rag.py             Retrieval + grounding gate + citation binding
     vector_store.py    Chroma wrapper, degrades to keyword search
 
-frontend/
+frontend/                Tailwind + shadcn-style components on Radix
   app/                 Thin routes; one per surface + landing
-  app/globals.css      THE design system. All tokens live here.
-  components/ui/       Primitives (Button, Dialog, Toast, Badge, …)
+  app/globals.css      Theme variables (HSL triples) + a few component classes
+  tailwind.config.ts   THE design system: palette, type scale, radii, motion
+  lib/utils.ts         cn() — clsx + tailwind-merge
+  components/ui/       Primitives (button.tsx, primitives.tsx, toast.tsx)
   components/workspace/
     workspace-provider.tsx   Shared state for every surface
     app-shell.tsx            Sidebar + topbar + panel orchestration
@@ -122,8 +124,15 @@ of a scanned document is processed; there is no page cap.
 - Comments explain *why*, not *what*. Prefer no comment to a restatement of the code.
 - Backend: strict mypy, ruff (line length 120). Third-party stubs are declared in
   `pyproject.toml` overrides.
-- Frontend: no CSS-in-JS, no Tailwind. Semantic class names + tokens in
-  `globals.css`. Adding a hardcoded color/size is a bug — use or add a token.
+- Frontend: Tailwind utilities only — no CSS-in-JS, no new semantic class names.
+  Colours come from the theme (`bg-card`, `text-muted-foreground`), never raw
+  hex or `bg-[#...]`; a hardcoded colour is a bug. Add a variable in
+  `globals.css` and map it in `tailwind.config.ts` instead.
+- The visual language is Apple/iOS: grouped inset lists on a tinted canvas,
+  systemBlue as the only accent, larger radii, layered soft shadows,
+  translucent chrome (`.material`), and the `ease-spring` curve for motion.
+- Components follow the shadcn pattern (Radix primitive + CVA variants + `cn`),
+  authored in-repo rather than installed, so they can be edited freely.
 - Every interactive element needs hover / focus-visible / disabled states and an
   accessible name.
 - Tests exercise real code paths (real Tesseract, real PyMuPDF). PaddleOCR is

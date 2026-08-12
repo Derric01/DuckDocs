@@ -2,9 +2,10 @@
 
 import { AlertTriangle, ArrowUp, Copy, FileText, LockKeyhole, Paperclip } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { EmptyState, useToast } from '@/components/ui';
+import { Button, EmptyState, useToast } from '@/components/ui';
 import { CitationList } from '@/components/workspace/citations';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
+import { cn } from '@/lib/utils';
 import type { EvidenceRecord, MessageRecord } from '@/lib/types';
 
 const ACCEPT =
@@ -26,9 +27,6 @@ export function AskSurface() {
     useWorkspace();
   const { notify } = useToast();
 
-  // Stable identity so memoized turns don't re-render on every keystroke.
-  const handleCopy = useCallback(() => notify('Copied to clipboard'), [notify]);
-
   const [question, setQuestion] = useState('');
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -36,32 +34,33 @@ export function AskSurface() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const handleCopy = useCallback(() => notify('Copied to clipboard'), [notify]);
+
   /**
-   * Follow the conversation as turns arrive — but only when the user is
-   * already near the bottom. Yanking the view down while they are reading an
-   * earlier answer is the single most disruptive thing a chat surface can do.
+   * Follow the conversation as turns arrive — but only when the reader is
+   * already near the bottom. Yanking the view down while they read an earlier
+   * answer is the most disruptive thing a chat surface can do.
    */
   useEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
-    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
-    if (distanceFromBottom > 240) return;
+    if (node.scrollHeight - node.scrollTop - node.clientHeight > 240) return;
     node.scrollTo({ top: node.scrollHeight, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   }, [messages.length, asking]);
 
-  // Grow the composer with its content, up to the CSS max-height.
+  // Grow the composer with its content, up to a capped height.
   useEffect(() => {
     const node = textareaRef.current;
     if (!node) return;
     node.style.height = 'auto';
-    node.style.height = `${node.scrollHeight}px`;
+    node.style.height = `${Math.min(node.scrollHeight, 200)}px`;
   }, [question]);
 
   const submit = () => {
     const trimmed = question.trim();
     if (!trimmed || asking) return;
     setQuestion('');
-    // Keep the caret in the composer so a follow-up question needs no click.
+    // Keep the caret in the composer so a follow-up needs no click.
     textareaRef.current?.focus();
     void ask(trimmed);
   };
@@ -80,19 +79,19 @@ export function AskSurface() {
   const empty = messages.length <= 1 && documents.length === 0;
 
   return (
-    <div className="chat">
-      <div className="chat-scroll" ref={scrollRef}>
-        <div className="chat-thread">
+    <div className="flex h-full flex-col">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-6 pt-8 max-sm:px-4">
+        <div className="mx-auto max-w-3xl">
           {empty ? (
             <EmptyState
               icon={FileText}
               title="Your library is empty"
               description="Add documents to build a local evidence index. Scanned pages and images are recognized with on-device OCR."
               action={
-                <button className="btn btn-primary" onClick={() => fileRef.current?.click()}>
-                  <Paperclip size={15} strokeWidth={1.8} aria-hidden="true" />
+                <Button variant="primary" size="lg" onClick={() => fileRef.current?.click()}>
+                  <Paperclip className="size-4" aria-hidden />
                   Add documents
-                </button>
+                </Button>
               }
             />
           ) : (
@@ -108,15 +107,13 @@ export function AskSurface() {
           )}
 
           {asking ? (
-            <div className="turn">
-              <div className="turn-meta">
-                <span className="turn-name">DuckDocs</span>
-              </div>
-              <p className="thinking">
-                <span className="thinking-dots" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
+            <div className="mb-8 animate-slide-up">
+              <p className="mb-3 text-xs font-semibold text-foreground">DuckDocs</p>
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span className="flex gap-1" aria-hidden>
+                  <i className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                  <i className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                  <i className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:300ms]" />
                 </span>
                 Retrieving evidence
               </p>
@@ -125,12 +122,16 @@ export function AskSurface() {
         </div>
       </div>
 
-      <div className="composer-dock">
-        <div className="composer-inner">
+      <div className="shrink-0 px-6 pb-6 max-sm:px-4">
+        <div className="mx-auto max-w-3xl">
           {!empty && messages.length <= 1 ? (
-            <div className="suggestions">
+            <div className="mb-3 flex flex-wrap gap-2">
               {SUGGESTIONS.map((item) => (
-                <button key={item} onClick={() => setQuestion(item)}>
+                <button
+                  key={item}
+                  onClick={() => setQuestion(item)}
+                  className="h-8 rounded-full bg-card px-3.5 text-xs text-muted-foreground shadow-xs ring-1 ring-inset ring-border transition-all duration-fast ease-spring hover:text-foreground active:scale-[0.97]"
+                >
                   {item}
                 </button>
               ))}
@@ -138,7 +139,6 @@ export function AskSurface() {
           ) : null}
 
           <form
-            className={`composer ${dragging ? 'dragging' : ''}`}
             onSubmit={(event) => {
               event.preventDefault();
               submit();
@@ -157,6 +157,10 @@ export function AskSurface() {
               setDragging(false);
               void addFiles(event.dataTransfer.files);
             }}
+            className={cn(
+              'rounded-2xl bg-card shadow-md ring-1 ring-inset transition-all duration-200 ease-spring',
+              dragging ? 'ring-2 ring-primary' : 'ring-border focus-within:ring-border-strong',
+            )}
           >
             <textarea
               ref={textareaRef}
@@ -171,35 +175,42 @@ export function AskSurface() {
                   submit();
                 }
               }}
+              className="block w-full resize-none bg-transparent px-4 pb-2 pt-4 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/70"
             />
-            <div className="composer-bar">
-              <div className="composer-left">
-                <button
-                  type="button"
-                  className="composer-scope"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={uploading || connection === 'offline'}
-                >
-                  <Paperclip size={14} strokeWidth={1.8} aria-hidden="true" />
-                  {uploading ? 'Adding…' : 'Attach'}
-                </button>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  multiple
-                  accept={ACCEPT}
-                  className="visually-hidden"
-                  onChange={(event) => void addFiles(event.target.files)}
-                />
-              </div>
-              <button className="send-btn" type="submit" disabled={!question.trim() || asking} aria-label="Send">
-                <ArrowUp size={16} strokeWidth={2} aria-hidden="true" />
-              </button>
+            <div className="flex items-center justify-between gap-3 p-2 pl-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading || connection === 'offline'}
+              >
+                <Paperclip className="size-3.5" aria-hidden />
+                {uploading ? 'Adding…' : 'Attach'}
+              </Button>
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                accept={ACCEPT}
+                className="sr-only"
+                onChange={(event) => void addFiles(event.target.files)}
+              />
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                className="size-9 rounded-full p-0"
+                disabled={!question.trim() || asking}
+                aria-label="Send"
+              >
+                <ArrowUp className="size-4" strokeWidth={2.4} />
+              </Button>
             </div>
           </form>
 
-          <p className="composer-note">
-            <LockKeyhole size={11} strokeWidth={1.8} aria-hidden="true" />
+          <p className="mt-3 flex items-center justify-center gap-1.5 text-2xs text-muted-foreground">
+            <LockKeyhole className="size-3" aria-hidden />
             {connection === 'ready'
               ? 'Answers cite retrieved passages only. Nothing leaves this machine.'
               : 'Local API offline — start the backend to ask questions.'}
@@ -210,10 +221,7 @@ export function AskSurface() {
   );
 }
 
-/**
- * Memoized: a long thread re-renders every turn on each keystroke in the
- * composer otherwise, and citation grouping is not free.
- */
+/** Memoized: a long thread would otherwise re-render on every keystroke. */
 const Turn = memo(function Turn({
   message,
   activeEvidenceId,
@@ -227,8 +235,10 @@ const Turn = memo(function Turn({
 }) {
   if (message.role === 'user') {
     return (
-      <article className="turn turn-user">
-        <div className="bubble">{message.content}</div>
+      <article className="mb-8 flex animate-slide-up justify-end">
+        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-base leading-relaxed text-primary-foreground shadow-xs">
+          {message.content}
+        </div>
       </article>
     );
   }
@@ -237,24 +247,26 @@ const Turn = memo(function Turn({
   const errored = message.state === 'error';
 
   return (
-    <article className="turn">
-      <div className="turn-meta">
-        <span className="turn-name">DuckDocs</span>
-        {message.timestamp ? <span className="turn-time">{message.timestamp}</span> : null}
+    <article className="group mb-8 animate-slide-up">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-xs font-semibold text-foreground">DuckDocs</span>
+        {message.timestamp ? (
+          <span className="font-mono text-2xs tabular-nums text-muted-foreground/70">{message.timestamp}</span>
+        ) : null}
       </div>
 
       {refused || errored ? (
-        <div className="refusal">
-          <AlertTriangle size={15} strokeWidth={1.8} aria-hidden="true" />
+        <div className="flex gap-3 rounded-xl bg-warning-muted p-4">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
           <div>
-            <strong>{errored ? 'Could not reach the API' : 'Not enough evidence'}</strong>
-            <p>{message.content}</p>
+            <p className="text-sm font-semibold text-foreground">
+              {errored ? 'Could not reach the API' : 'Not enough evidence'}
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{message.content}</p>
           </div>
         </div>
       ) : (
-        <div className="answer">
-          <p>{message.content}</p>
-        </div>
+        <div className="text-base leading-[1.7] text-foreground">{message.content}</div>
       )}
 
       {message.citations && message.citations.length > 0 ? (
@@ -262,17 +274,22 @@ const Turn = memo(function Turn({
       ) : null}
 
       {!errored ? (
-        <div className="turn-tools">
-          <button
+        <div className="mt-3 flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-2xs"
             onClick={() => {
               void navigator.clipboard?.writeText(message.content);
               onCopy();
             }}
           >
-            <Copy size={13} strokeWidth={1.8} aria-hidden="true" />
+            <Copy className="size-3" aria-hidden />
             Copy
-          </button>
-          {message.provider ? <span className="turn-time mono">{message.provider}</span> : null}
+          </Button>
+          {message.provider ? (
+            <span className="font-mono text-2xs text-muted-foreground/70">{message.provider}</span>
+          ) : null}
         </div>
       ) : null}
     </article>

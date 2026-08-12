@@ -1,11 +1,12 @@
 import { ArrowRight, FileSearch, LockKeyhole, ScanText, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
+import { Badge, Button } from '@/components/ui';
 
 const PILLARS = [
   {
     icon: FileSearch,
     title: 'Evidence is an object',
-    body: 'Every claim in an answer carries a citation that opens the exact passage it came from — page, lines, and confidence included.',
+    body: 'Every claim carries a citation that opens the exact passage it came from — page, lines, and confidence included.',
   },
   {
     icon: LockKeyhole,
@@ -20,96 +21,105 @@ const PILLARS = [
 ];
 
 const STEPS = [
-  { title: 'Ingest', body: 'Files are parsed page by page. Anything without a text layer is sent through local OCR.' },
-  { title: 'Retrieve', body: 'Questions search by meaning against a local index, with keyword fallback when no model is running.' },
+  { title: 'Ingest', body: 'Files are parsed page by page. Anything without a text layer goes through local OCR.' },
+  { title: 'Summarize', body: 'Each document gets a summary on arrival, labeled with how it was produced.' },
   { title: 'Ground', body: 'A model drafts only from retrieved passages. Unsupported claims are refused, not smoothed over.' },
-  { title: 'Verify', body: 'Open any citation to read the source passage and judge it yourself.' },
+  { title: 'Verify', body: 'Open any citation to read the source page and judge it yourself.' },
 ];
 
 export default function LandingPage() {
   return (
-    <main className="landing">
-      <header className="landing-nav">
-        <Link href="/" className="brand">
-          <span className="brand-mark" aria-hidden="true">
+    <main className="min-h-[100dvh] bg-background">
+      <header className="material sticky top-0 z-20 flex h-14 items-center justify-between gap-6 border-b border-border px-6">
+        <Link href="/" className="flex items-center gap-2.5">
+          <span className="grid size-7 place-items-center rounded-lg bg-foreground text-xs font-bold text-background">
             D
           </span>
-          <span>
-            <span className="brand-name">DuckDocs</span>
-          </span>
+          <span className="text-sm font-semibold tracking-tight">DuckDocs</span>
         </Link>
-        <nav className="landing-nav-links" aria-label="Sections">
-          <a href="#principles">Principles</a>
-          <a href="#how">How it works</a>
-          <Link className="btn btn-primary btn-sm" href="/intelligence">
-            Open workspace
-          </Link>
+        <nav aria-label="Sections" className="flex items-center gap-1">
+          <a
+            href="#principles"
+            className="hidden h-9 items-center rounded-lg px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
+          >
+            Principles
+          </a>
+          <a
+            href="#how"
+            className="hidden h-9 items-center rounded-lg px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
+          >
+            How it works
+          </a>
+          <Button asChild variant="primary" size="sm">
+            <Link href="/intelligence">Open workspace</Link>
+          </Button>
         </nav>
       </header>
 
-      <section className="landing-inner hero">
-        <h1>Answers you can trace back to the page they came from</h1>
-        <p className="hero-lede">
-          DuckDocs turns your own documents into a private, searchable workspace. Ask a question in plain language and
-          get an answer that cites its sources — or an honest refusal when the evidence is not there.
+      <section className="mx-auto max-w-4xl px-6 pb-16 pt-24 text-center max-sm:pt-14">
+        <h1 className="text-balance mx-auto max-w-3xl text-5xl font-bold leading-[1.05] tracking-[-0.03em] max-sm:text-3xl">
+          Answers you can trace back to the page they came from
+        </h1>
+        <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground max-sm:text-base">
+          DuckDocs turns your own documents into a private, searchable workspace. Ask in plain language and get an
+          answer that cites its sources — or an honest refusal when the evidence is not there.
         </p>
-        <div className="hero-actions">
-          <Link className="btn btn-primary btn-lg" href="/intelligence">
-            Open workspace
-            <ArrowRight size={15} strokeWidth={1.8} aria-hidden="true" />
-          </Link>
-          <Link className="btn btn-secondary btn-lg" href="/library">
-            Add documents
-          </Link>
+        <div className="mt-9 flex flex-wrap justify-center gap-3">
+          <Button asChild variant="primary" size="lg">
+            <Link href="/intelligence">
+              Open workspace
+              <ArrowRight className="size-4" aria-hidden />
+            </Link>
+          </Button>
+          <Button asChild size="lg">
+            <Link href="/library">Add documents</Link>
+          </Button>
         </div>
-        <p className="hero-note">
-          <LockKeyhole size={13} strokeWidth={1.8} aria-hidden="true" />
+        <p className="mt-8 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <LockKeyhole className="size-3.5" aria-hidden />
           Runs entirely on your machine
         </p>
 
-        <div className="hero-preview">
-          <div className="hero-preview-head">
-            <span className="kicker">Grounded answer</span>
-            <span className="badge badge-success">
-              <ShieldCheck size={11} strokeWidth={2} aria-hidden="true" />
-              Cited
+        <div className="mx-auto mt-16 max-w-xl overflow-hidden rounded-2xl bg-card text-left shadow-xl ring-1 ring-inset ring-border">
+          <div className="flex items-center justify-between border-b border-border bg-secondary/60 px-4 py-2.5">
+            <span className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Grounded answer
             </span>
+            <Badge tone="success">
+              <ShieldCheck className="size-3" aria-hidden />
+              Cited
+            </Badge>
           </div>
-          <div className="hero-preview-body">
-            <p className="hero-preview-answer">
+          <div className="p-5">
+            <p className="text-sm leading-relaxed text-foreground">
               Records must remain on the local machine for 18 months before archival review.
-              <span className="citation-chip" aria-hidden="true">
+            </p>
+            <div className="mt-4 inline-flex items-center gap-2 rounded-lg bg-secondary px-2.5 py-1.5">
+              <span className="grid size-5 place-items-center rounded bg-primary/15 font-mono text-[10px] text-primary">
                 1
               </span>
-            </p>
-            <div className="citation-list">
-              <span className="citation-source">
-                <span className="ord" aria-hidden="true">
-                  1
-                </span>
-                <span className="name">retention-policy.pdf</span>
-                <span className="mono">p2 · 94%</span>
-              </span>
+              <span className="text-xs text-muted-foreground">retention-policy.pdf</span>
+              <span className="font-mono text-2xs text-muted-foreground/70">p2 · 94%</span>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="landing-section" id="principles">
-        <div className="landing-inner">
-          <h2>Built for documents you actually have to trust</h2>
-          <p>
+      <section id="principles" className="border-t border-border py-20">
+        <div className="mx-auto max-w-4xl px-6">
+          <h2 className="text-2xl font-bold tracking-tight">Built for documents you actually have to trust</h2>
+          <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted-foreground">
             Cloud assistants answer fluently but hide where the answer came from, and they want your files. DuckDocs
             closes that gap: one local library, retrieval you can audit, and uncertainty stated plainly.
           </p>
-          <div className="feature-grid">
+          <div className="mt-8 grid gap-4 sm:grid-cols-3">
             {PILLARS.map((pillar) => {
               const Icon = pillar.icon;
               return (
-                <article className="feature" key={pillar.title}>
-                  <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
-                  <strong>{pillar.title}</strong>
-                  <p>{pillar.body}</p>
+                <article key={pillar.title} className="rounded-2xl bg-card p-5 shadow-sm">
+                  <Icon className="mb-4 size-5 text-muted-foreground" strokeWidth={1.8} aria-hidden />
+                  <h3 className="text-sm font-semibold text-foreground">{pillar.title}</h3>
+                  <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{pillar.body}</p>
                 </article>
               );
             })}
@@ -117,27 +127,36 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="landing-section" id="how">
-        <div className="landing-inner">
-          <h2>How a question becomes a grounded answer</h2>
-          <p>Four stages, with a mandatory checkpoint before anything reaches you.</p>
-          <div className="step-grid">
-            {STEPS.map((step) => (
-              <article className="step" key={step.title}>
-                <strong>{step.title}</strong>
-                <p>{step.body}</p>
-              </article>
+      <section id="how" className="border-t border-border py-20">
+        <div className="mx-auto max-w-4xl px-6">
+          <h2 className="text-2xl font-bold tracking-tight">How a question becomes a grounded answer</h2>
+          <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted-foreground">
+            Four stages, with a mandatory checkpoint before anything reaches you.
+          </p>
+          <ol className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {STEPS.map((step, index) => (
+              <li key={step.title}>
+                <span className="font-mono text-xs text-primary">
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                <h3 className="mt-2.5 text-sm font-semibold text-foreground">{step.title}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
+              </li>
             ))}
-          </div>
+          </ol>
         </div>
       </section>
 
-      <footer className="landing-inner landing-foot">
-        <span>DuckDocs — private, evidence-aware document intelligence.</span>
-        <Link className="btn btn-secondary btn-sm" href="/intelligence">
-          Open workspace
-          <ArrowRight size={13} strokeWidth={1.8} aria-hidden="true" />
-        </Link>
+      <footer className="border-t border-border py-8">
+        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-4 px-6 text-xs text-muted-foreground">
+          <span>DuckDocs — private, evidence-aware document intelligence.</span>
+          <Button asChild size="sm">
+            <Link href="/intelligence">
+              Open workspace
+              <ArrowRight className="size-3.5" aria-hidden />
+            </Link>
+          </Button>
+        </div>
       </footer>
     </main>
   );

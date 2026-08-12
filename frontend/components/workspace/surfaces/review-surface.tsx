@@ -1,55 +1,37 @@
 'use client';
 
 import { AlertCircle, CheckCircle2, ChevronRight, ScanText } from 'lucide-react';
-import { Badge, EmptyState } from '@/components/ui';
+import { Badge, Card, EmptyState } from '@/components/ui';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
 import type { DocumentRecord } from '@/lib/types';
 
 function reason(document: DocumentRecord): string {
-  if (document.status === 'failed') {
-    return 'Processing failed. Check the file, then add it again.';
-  }
+  if (document.status === 'failed') return 'Processing failed. Check the file, then add it again.';
   return 'No readable text was found, even after OCR. The file is stored but is not searchable.';
 }
 
 export function ReviewSurface() {
   const { documents, inspectDocument } = useWorkspace();
 
-  const attention = documents.filter(
-    (document) => document.status === 'review' || document.status === 'failed',
-  );
-  const ready = documents.filter((document) => document.status === 'ready');
-  const ocrCount = documents.filter((document) => document.fidelity === 'OCR dependent').length;
+  const attention = documents.filter((d) => d.status === 'review' || d.status === 'failed');
+  const ready = documents.filter((d) => d.status === 'ready');
+  const ocrCount = documents.filter((d) => d.fidelity === 'OCR dependent').length;
   const coverage = documents.length ? Math.round((ready.length / documents.length) * 100) : 0;
 
   return (
-    <div className="surface surface-narrow">
-      <header className="surface-head">
-        <div className="surface-head-row">
-          <div>
-            <h2>Review</h2>
-            <p>Documents that need attention before they can be cited, and how much of your library is searchable.</p>
-          </div>
-        </div>
+    <div className="mx-auto max-w-4xl px-8 pb-16 pt-8 max-sm:px-4 max-sm:pt-5">
+      <header className="mb-6">
+        <h2 className="text-3xl font-bold tracking-tight">Review</h2>
+        <p className="mt-1.5 max-w-prose text-sm text-muted-foreground">
+          Documents that need attention before they can be cited, and how much of your library is searchable.
+        </p>
       </header>
 
-      <div className="stat-grid">
-        <div className="stat">
-          <p className="stat-label">Searchable</p>
-          <p className="stat-value">{coverage}%</p>
-        </div>
-        <div className="stat">
-          <p className="stat-label">Ready documents</p>
-          <p className="stat-value">{ready.length}</p>
-        </div>
-        <div className="stat">
-          <p className="stat-label">Needs attention</p>
-          <p className="stat-value">{attention.length}</p>
-        </div>
-        <div className="stat">
-          <p className="stat-label">OCR-derived</p>
-          <p className="stat-value">{ocrCount}</p>
-        </div>
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Searchable" value={`${coverage}%`} />
+        <Stat label="Ready documents" value={String(ready.length)} />
+        <Stat label="Needs attention" value={String(attention.length)} />
+        <Stat label="OCR-derived" value={String(ocrCount)} />
       </div>
 
       {attention.length === 0 ? (
@@ -63,28 +45,41 @@ export function ReviewSurface() {
           }
         />
       ) : (
-        <div className="review-list">
+        <div className="list-group">
           {attention.map((document) => (
-            <button key={document.id} className="review-row" onClick={() => void inspectDocument(document)}>
-              <span className="doc-icon" aria-hidden="true">
+            <button
+              key={document.id}
+              onClick={() => void inspectDocument(document)}
+              className="flex w-full items-center gap-4 border-b border-border/70 p-4 text-left transition-colors duration-fast last:border-b-0 hover:bg-muted/40"
+            >
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
                 {document.status === 'failed' ? (
-                  <AlertCircle size={15} strokeWidth={1.7} />
+                  <AlertCircle className="size-4" strokeWidth={1.8} aria-hidden />
                 ) : (
-                  <ScanText size={15} strokeWidth={1.7} />
+                  <ScanText className="size-4" strokeWidth={1.8} aria-hidden />
                 )}
               </span>
-              <span className="review-copy">
-                <strong>{document.name}</strong>
-                <p>{reason(document)}</p>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-foreground">{document.name}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">{reason(document)}</span>
               </span>
-              <Badge tone={document.status === 'failed' ? 'danger' : 'warning'}>
+              <Badge tone={document.status === 'failed' ? 'destructive' : 'warning'}>
                 {document.status === 'failed' ? 'Failed' : 'Needs review'}
               </Badge>
-              <ChevronRight size={15} strokeWidth={1.8} className="doc-chevron" aria-hidden="true" />
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
             </button>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <Card className="p-4">
+      <p className="text-2xs text-muted-foreground">{label}</p>
+      <p className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
+    </Card>
   );
 }
