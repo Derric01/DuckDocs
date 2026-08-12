@@ -5,132 +5,150 @@
 /**
  * Theme variables.
  *
- * Light is the iOS "grouped" convention: a soft grey canvas with white cards
- * floating on it, which is what gives Settings-style screens their depth
- * without any borders doing heavy lifting. Dark inverts that relationship —
- * true black canvas with elevated near-black surfaces, as on OLED iOS.
+ * The register is editorial legal-tech — the one Hebbia and Legora work in:
+ * a warm paper canvas, near-black ink, hairline rules, and colour reserved
+ * almost entirely for meaning.
+ *
+ * Two rules hold the palette together:
+ *
+ * 1. The neutrals are WARM (hue 35-40). The previous theme used a cool 240
+ *    grey, which reads as generic SaaS chrome. Paper does not.
+ * 2. The accent is INK, not a brand hue. Orange failed here because it sat in
+ *    the same warm band as the amber warning and the low-confidence signal, so
+ *    "do this" and "be careful" looked alike. An ink-filled primary vacates the
+ *    entire chromatic range, leaving it to mean something.
  */
 
 @layer base {
   :root {
-    --background: 240 6% 97%;      /* systemGroupedBackground */
+    /* Paper. Warm and slightly off-white, so white cards read as raised
+       without needing a shadow to say so. */
+    --background: 40 24% 97%;
     --grouped: 0 0% 100%;
-    --foreground: 240 6% 10%;
+    --foreground: 30 8% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 240 6% 10%;
+    --card-foreground: 30 8% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 6% 10%;
+    --popover-foreground: 30 8% 11%;
 
-    --muted: 240 5% 94%;
-    --muted-foreground: 240 4% 46%;
+    --muted: 38 16% 94%;
+    --muted-foreground: 32 6% 42%;
 
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 240 6% 10%;
+    --secondary: 38 16% 95%;
+    --secondary-foreground: 30 8% 11%;
 
-    /* Brand orange.
-       systemOrange (28 100% 50%) only reaches 2.66:1 against white text, a
-       clear AA failure, so the filled variant is deepened to 40% lightness
-       (4.95:1). The brighter tint is kept separately for text and icons,
-       which sit on the page rather than inside a filled control. */
-    --primary: 20 92% 40%;
-    --primary-foreground: 0 0% 100%;
-    --primary-muted: 24 100% 95%;
-    --primary-vivid: 24 100% 47%;
+    /* Ink. A filled control is near-black with paper-white text (15.9:1) —
+       the inverted-button pattern this whole register is built on. */
+    --primary: 30 9% 13%;
+    --primary-foreground: 40 24% 98%;
+    --primary-muted: 34 14% 92%;
+    --primary-vivid: 30 9% 24%;
 
-    --success: 142 61% 37%;
-    --success-muted: 142 60% 95%;
-    /* Pushed toward amber: orange is now the brand colour, and a caution
-       state must not be mistakable for a call to action. */
-    --warning: 45 96% 33%;
-    --warning-muted: 45 96% 94%;
-    --destructive: 3 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-    --destructive-muted: 3 72% 96%;
+    /* The one chromatic accent: a low-chroma slate blue for selection, focus,
+       links, and citation markers. Cool, so it can never be confused with the
+       amber caution or the green confidence signal. */
+    --accent: 222 42% 40%;
+    --accent-foreground: 40 24% 98%;
+    --accent-muted: 222 46% 94%;
 
-    --border: 240 6% 90%;
-    --border-strong: 240 5% 82%;
-    --input: 240 6% 90%;
-    --ring: 20 92% 40%;
+    /* Semantics, desaturated to sit on paper rather than shout over it. */
+    --success: 152 44% 29%;
+    --success-muted: 152 34% 93%;
+    --warning: 36 78% 33%;
+    --warning-muted: 38 74% 93%;
+    --destructive: 6 58% 44%;
+    --destructive-foreground: 40 24% 98%;
+    --destructive-muted: 6 56% 95%;
 
-    --shadow-xs: 0 1px 2px rgba(15, 18, 26, 0.04);
-    --shadow-sm: 0 1px 3px rgba(15, 18, 26, 0.06), 0 1px 2px rgba(15, 18, 26, 0.04);
-    --shadow-md: 0 4px 16px rgba(15, 18, 26, 0.07), 0 1px 3px rgba(15, 18, 26, 0.05);
-    --shadow-lg: 0 12px 32px rgba(15, 18, 26, 0.10), 0 2px 8px rgba(15, 18, 26, 0.05);
-    --shadow-xl: 0 24px 64px rgba(15, 18, 26, 0.16), 0 4px 12px rgba(15, 18, 26, 0.07);
+    /* Hairlines do the structural work that shadows used to. `--border` is
+       decorative and stays faint. `--input` is not: it is the only thing that
+       marks where a control begins, so it is measured to clear 3:1 against
+       both the card and the paper behind it (WCAG 1.4.11). */
+    --border: 36 14% 88%;
+    --border-strong: 34 11% 76%;
+    --input: 34 10% 54%;
+    --ring: 222 42% 40%;
 
-    /* iOS system colours (light) */
-    --ios-red: 3 100% 59%;
-    --ios-orange: 24 100% 47%;
-    --ios-yellow: 42 100% 47%;
-    --ios-green: 142 71% 38%;
-    --ios-teal: 189 76% 43%;
-    --ios-blue: 211 100% 50%;
-    --ios-indigo: 240 60% 55%;
-    --ios-purple: 280 68% 55%;
-    --ios-pink: 341 90% 56%;
-    --ios-gray: 240 4% 52%;
+    /* Shadows are nearly gone. What is left is a whisper under overlays only,
+       because a flat language loses its footing when a popover floats. */
+    --shadow-xs: 0 1px 0 rgba(28, 25, 22, 0.03);
+    --shadow-sm: 0 1px 2px rgba(28, 25, 22, 0.05);
+    --shadow-md: 0 4px 12px rgba(28, 25, 22, 0.06);
+    --shadow-lg: 0 12px 28px rgba(28, 25, 22, 0.10);
+    --shadow-xl: 0 24px 56px rgba(28, 25, 22, 0.14);
 
-    --material: 240 6% 97%;
+    /**
+     * Document-kind index. Colour here is data, not decoration: the same hue
+     * always means the same kind of file. Muted into the paper register so a
+     * library of twenty rows reads as a document, not a toy.
+     */
+    --kind-doc: 222 42% 42%;
+    --kind-sheet: 152 40% 31%;
+    --kind-slide: 18 58% 44%;
+    --kind-image: 280 32% 46%;
+    --kind-code: 200 40% 36%;
+    --kind-text: 32 8% 42%;
+
+    --material: 40 24% 97%;
     color-scheme: light;
   }
 
   [data-theme='dark'] {
-    --background: 0 0% 0%;
-    --grouped: 240 4% 11%;
-    --foreground: 0 0% 98%;
+    /* Warm near-black rather than true black: it keeps the paper relationship
+       intact when the lights go off, instead of becoming a different product. */
+    --background: 30 7% 7%;
+    --grouped: 30 6% 11%;
+    --foreground: 40 18% 95%;
 
-    --card: 240 4% 11%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 4% 13%;
-    --popover-foreground: 0 0% 98%;
+    --card: 30 6% 10%;
+    --card-foreground: 40 18% 95%;
+    --popover: 30 6% 13%;
+    --popover-foreground: 40 18% 95%;
 
-    --muted: 240 4% 16%;
-    --muted-foreground: 240 4% 62%;
+    --muted: 30 5% 16%;
+    --muted-foreground: 36 7% 65%;
 
-    --secondary: 240 4% 15%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 30 5% 15%;
+    --secondary-foreground: 40 18% 95%;
 
-    /* Dark mode inverts the fix: a bright orange with near-black text
-       (8.96:1) reads better than any orange that white text can sit on,
-       which is exactly how iOS treats its orange and yellow buttons. */
-    --primary: 30 100% 60%;
-    --primary-foreground: 240 6% 8%;
-    --primary-muted: 26 70% 18%;
-    --primary-vivid: 32 100% 66%;
+    /* Inverted again: on a dark canvas the filled control is the paper. */
+    --primary: 40 20% 94%;
+    --primary-foreground: 30 9% 10%;
+    --primary-muted: 30 5% 20%;
+    --primary-vivid: 40 16% 82%;
 
-    --success: 142 60% 52%;
-    --success-muted: 142 40% 16%;
-    --warning: 45 95% 60%;
-    --warning-muted: 45 50% 18%;
-    --destructive: 3 85% 65%;
-    --destructive-foreground: 0 0% 100%;
-    --destructive-muted: 3 50% 20%;
+    --accent: 220 70% 72%;
+    --accent-foreground: 30 9% 10%;
+    --accent-muted: 222 30% 20%;
 
-    --border: 240 4% 18%;
-    --border-strong: 240 4% 28%;
-    --input: 240 4% 20%;
-    --ring: 30 100% 60%;
+    --success: 152 46% 58%;
+    --success-muted: 152 30% 16%;
+    --warning: 38 82% 62%;
+    --warning-muted: 36 40% 17%;
+    --destructive: 6 74% 66%;
+    --destructive-foreground: 30 9% 10%;
+    --destructive-muted: 6 40% 19%;
 
-    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.45);
-    --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.75), 0 4px 12px rgba(0, 0, 0, 0.5);
+    --border: 32 5% 19%;
+    --border-strong: 34 5% 32%;
+    --input: 34 6% 42%;
+    --ring: 220 70% 72%;
 
-    /* iOS system colours (dark) — lifted so they hold on black */
-    --ios-red: 3 100% 66%;
-    --ios-orange: 30 100% 60%;
-    --ios-yellow: 42 100% 58%;
-    --ios-green: 142 62% 50%;
-    --ios-teal: 189 78% 55%;
-    --ios-blue: 211 100% 60%;
-    --ios-indigo: 240 70% 68%;
-    --ios-purple: 280 70% 68%;
-    --ios-pink: 341 95% 66%;
-    --ios-gray: 240 4% 60%;
+    --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.4);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.55);
+    --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.65);
+    --shadow-xl: 0 24px 56px rgba(0, 0, 0, 0.75);
 
-    --material: 240 4% 8%;
+    --kind-doc: 220 66% 70%;
+    --kind-sheet: 152 44% 58%;
+    --kind-slide: 20 72% 64%;
+    --kind-image: 280 48% 70%;
+    --kind-code: 197 52% 60%;
+    --kind-text: 36 8% 62%;
+
+    --material: 30 7% 8%;
     color-scheme: dark;
   }
 
@@ -140,7 +158,7 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01';
     text-rendering: optimizeLegibility;
   }
 
@@ -150,10 +168,10 @@
   }
 
   ::selection {
-    @apply bg-primary/20;
+    @apply bg-accent/20;
   }
 
-  /* Thin, self-effacing scrollbars in the macOS overlay style. */
+  /* Thin, self-effacing scrollbars. */
   * {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border-strong)) transparent;
@@ -185,14 +203,14 @@
 
 @layer components {
   /**
-   * Translucent chrome. Sidebar and toolbars sample the content behind them,
-   * which is the single most recognizable trait of Apple surfaces — and the
-   * reason they read as layered rather than stacked.
+   * Translucent chrome for the sidebar and toolbars. Kept from the previous
+   * theme because layering still helps a three-pane workspace — but the blur
+   * is lighter, so it reads as paper over paper rather than frosted glass.
    */
   .material {
-    background-color: hsl(var(--material) / 0.72);
-    backdrop-filter: saturate(180%) blur(20px);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    background-color: hsl(var(--material) / 0.86);
+    backdrop-filter: saturate(120%) blur(12px);
+    -webkit-backdrop-filter: saturate(120%) blur(12px);
   }
 
   @supports not (backdrop-filter: blur(1px)) {
@@ -202,22 +220,33 @@
   }
 
   /**
-   * Colour-coded icon tile, as on every iOS Settings row. The saturated fill
-   * with a white glyph is what makes those lists scannable at a glance.
+   * Document-kind glyph. A tinted square with a coloured glyph, not a
+   * saturated fill with a white one: the kind stays identifiable at a glance
+   * without the row turning into a colour swatch.
    */
-  .icon-tile {
-    @apply grid shrink-0 place-items-center rounded-[9px] text-white shadow-xs;
+  .kind-mark {
+    @apply grid size-8 shrink-0 place-items-center rounded-[5px] border;
   }
 
-  /** Inset grouped list, as in iOS Settings. */
-  .list-group {
-    @apply overflow-hidden rounded-xl bg-card shadow-sm;
+  /**
+   * Panel: the flat bordered surface this whole UI is built from. Depth comes
+   * from the hairline and the paper underneath, never from a drop shadow.
+   */
+  .panel {
+    @apply rounded-lg border border-border bg-card;
   }
-  .list-row {
-    @apply flex items-center gap-3 px-4 transition-colors duration-fast;
+
+  /** Data table. Dense, ruled, and column-aligned — the workbench idiom. */
+  .table-head {
+    @apply border-b border-border bg-muted/40 text-2xs font-semibold uppercase tracking-[0.08em] text-muted-foreground;
   }
-  .list-row + .list-row {
-    @apply border-t border-border/70;
+  .table-row-hairline + .table-row-hairline {
+    @apply border-t border-border;
+  }
+
+  /** Small-caps label used above field groups and metadata blocks. */
+  .eyebrow {
+    @apply text-2xs font-semibold uppercase tracking-[0.09em] text-muted-foreground;
   }
 }
 
@@ -229,6 +258,12 @@
   .gpu {
     transform: translateZ(0);
     will-change: transform;
+  }
+  /* Editorial display face, for page titles and the landing hero only. */
+  .font-display {
+    font-family: var(--font-display), Georgia, 'Times New Roman', serif;
+    font-weight: 400;
+    letter-spacing: -0.015em;
   }
 }
 

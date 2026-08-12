@@ -51,17 +51,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             role="status"
             className={cn(
               'pointer-events-auto flex w-full max-w-md animate-slide-up items-center gap-3',
-              'rounded-xl bg-popover px-4 py-3 text-sm shadow-lg ring-1 ring-inset ring-border',
+              'rounded-lg border border-border bg-popover px-3.5 py-2.5 text-sm shadow-lg',
             )}
           >
             <span
               className={cn(
-                'grid size-5 shrink-0 place-items-center rounded-full',
+                'grid size-5 shrink-0 place-items-center rounded-sm border',
                 message.tone === 'error'
-                  ? 'bg-destructive-muted text-destructive'
+                  ? 'border-destructive/20 bg-destructive-muted text-destructive'
                   : message.tone === 'success'
-                    ? 'bg-success-muted text-success'
-                    : 'bg-muted text-muted-foreground',
+                    ? 'border-success/20 bg-success-muted text-success'
+                    : 'border-border bg-muted text-muted-foreground',
               )}
             >
               {message.tone === 'error' ? (

@@ -16,7 +16,6 @@ import {
   TabsTrigger,
   useToast,
 } from '@/components/ui';
-import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
 import { duckDocsApi, type ProviderConfigRecord } from '@/lib/api/client';
 import { applyDensity, applyTheme, readDensity, readTheme, type Density, type ThemeChoice } from '@/lib/theme';
@@ -96,8 +95,8 @@ export function SettingsSurface() {
 
   return (
     <div className="mx-auto max-w-3xl px-8 pb-16 pt-8 max-sm:px-4 max-sm:pt-5">
-      <header className="mb-8">
-        <h2 className="text-3xl font-bold tracking-tight">Settings</h2>
+      <header className="mb-8 border-b border-border pb-5">
+        <h2 className="font-display text-3xl text-foreground">Settings</h2>
         <p className="mt-1.5 max-w-prose text-sm text-muted-foreground">
           Control which models run, how the workspace looks, and what is allowed to leave this machine.
         </p>
@@ -106,17 +105,16 @@ export function SettingsSurface() {
       <div className="space-y-10">
         <Section
           icon={Sparkles}
-          tile="bg-ios-purple"
           title="Models"
           description="DuckDocs answers from your local evidence index. A model only drafts the wording — remote providers are opt-in and never enabled by default."
         >
           <div className="mb-4 flex flex-wrap gap-2">
             <Button onClick={() => void configureOllama()}>
-              <Plus className="size-4" aria-hidden />
+              <Plus className="size-3.5" aria-hidden />
               Configure Ollama
             </Button>
             <Button onClick={() => setRemoteOpen(true)}>
-              <Plus className="size-4" aria-hidden />
+              <Plus className="size-3.5" aria-hidden />
               Add remote provider
             </Button>
           </div>
@@ -130,7 +128,7 @@ export function SettingsSurface() {
               description="DuckDocs falls back to built-in extractive answers and keyword retrieval, which need no model at all."
             />
           ) : (
-            <div className="list-group">
+            <div className="overflow-hidden rounded-lg border border-border bg-card">
               {providers.map((provider) => (
                 <ProviderRow
                   key={provider.id}
@@ -143,9 +141,9 @@ export function SettingsSurface() {
           )}
         </Section>
 
-        <Section icon={Moon} tile="bg-ios-indigo" title="Appearance" description="Dark is designed for long review sessions.">
-          <div className="list-group">
-            <div className="list-row min-h-[60px] justify-between">
+        <Section icon={Moon} title="Appearance" description="Dark is designed for long review sessions.">
+          <div className="overflow-hidden rounded-lg border border-border bg-card">
+            <div className="table-row-hairline flex min-h-[56px] items-center justify-between gap-4 px-4">
               <div>
                 <p className="text-sm font-medium text-foreground">Theme</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">Follow the system setting, or pin one.</p>
@@ -174,7 +172,7 @@ export function SettingsSurface() {
               </Tabs>
             </div>
 
-            <div className="list-row min-h-[60px] justify-between">
+            <div className="table-row-hairline flex min-h-[56px] items-center justify-between gap-4 px-4">
               <div>
                 <p className="text-sm font-medium text-foreground">Comfortable density</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">Taller rows and more spacing.</p>
@@ -192,18 +190,19 @@ export function SettingsSurface() {
           </div>
         </Section>
 
-        <Section icon={Cpu} tile="bg-primary" title="Processing" description="How documents become searchable, citable evidence.">
-          <Callout icon={Cpu} tile="bg-primary" title="On-device OCR">
-            Scanned PDFs and images are recognized locally with PaddleOCR, falling back to Tesseract when its model
-            weights are unavailable. Every page is processed — there is no page cap or quota — and each passage keeps
-            its confidence score so low-quality recognition is labeled rather than hidden. Configure with{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-2xs">DUCKDOCS_OCR_ENGINE</code> and{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-2xs">DUCKDOCS_OCR_LANGUAGES</code>.
+        <Section icon={Cpu} title="Processing" description="How documents become searchable, citable evidence.">
+          <Callout icon={Cpu} title="On-device OCR">
+            Scanned PDFs and images are recognized locally with RapidOCR, falling back to Tesseract when its
+            bundled models are unavailable. Every page is processed — there is no page cap or quota — and each
+            passage keeps its confidence score so low-quality recognition is labeled rather than hidden. Configure
+            with <code className="rounded-sm border border-border bg-muted px-1 py-0.5 font-mono text-2xs">DUCKDOCS_OCR_ENGINE</code>{' '}
+            and{' '}
+            <code className="rounded-sm border border-border bg-muted px-1 py-0.5 font-mono text-2xs">DUCKDOCS_OCR_LANGUAGES</code>.
           </Callout>
         </Section>
 
-        <Section icon={LockKeyhole} tile="bg-ios-green" title="Privacy" description="What runs locally, and what would leave this machine.">
-          <Callout icon={LockKeyhole} tile="bg-ios-green" title="Your data boundary">
+        <Section icon={LockKeyhole} title="Privacy" description="What runs locally, and what would leave this machine.">
+          <Callout icon={LockKeyhole} title="Your data boundary">
             Files, the evidence index, and OCR all stay on this machine. There is no analytics, telemetry, or crash
             reporting. A remote provider only receives text if you configure one, and it is labeled wherever it is
             used.
@@ -227,13 +226,11 @@ export function SettingsSurface() {
 
 function Section({
   icon: Icon,
-  tile,
   title,
   description,
   children,
 }: {
   icon: typeof Cpu;
-  tile: string;
   title: string;
   description: string;
   children: React.ReactNode;
@@ -241,10 +238,8 @@ function Section({
   return (
     <section>
       <header className="mb-3">
-        <h3 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
-          <span className={cn('icon-tile size-7', tile)}>
-            <Icon className="size-4" strokeWidth={2.2} aria-hidden />
-          </span>
+        <h3 className="flex items-center gap-2 text-base font-semibold text-foreground">
+          <Icon className="size-4 text-muted-foreground" strokeWidth={1.8} aria-hidden />
           {title}
         </h3>
         <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>
@@ -256,19 +251,17 @@ function Section({
 
 function Callout({
   icon: Icon,
-  tile,
   title,
   children,
 }: {
   icon: typeof Cpu;
-  tile: string;
   title: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex gap-4 rounded-xl bg-card p-5 shadow-sm">
-      <span className={cn('icon-tile size-9', tile)}>
-        <Icon className="size-[18px]" strokeWidth={2} aria-hidden />
+    <div className="flex gap-3.5 rounded-lg border border-border bg-card p-4">
+      <span className="grid size-8 shrink-0 place-items-center rounded-sm border border-border bg-muted text-muted-foreground">
+        <Icon className="size-4" strokeWidth={1.7} aria-hidden />
       </span>
       <div>
         <h4 className="text-sm font-semibold text-foreground">{title}</h4>
@@ -289,14 +282,14 @@ function ProviderRow({
 }) {
   const label = PROVIDER_LABEL[provider.providerType] ?? provider.providerType;
   return (
-    <div className="list-row min-h-[68px] py-3">
-      <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-xs font-semibold text-muted-foreground">
+    <div className="table-row-hairline flex min-h-[64px] items-center gap-3 px-4 py-2.5">
+      <span className="grid size-8 shrink-0 place-items-center rounded-sm border border-border bg-muted text-xs font-semibold text-muted-foreground">
         {label.slice(0, 1)}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-sm font-medium text-foreground">{label}</span>
-          {provider.isDefault ? <Badge tone="primary">Default</Badge> : null}
+          {provider.isDefault ? <Badge tone="accent">Default</Badge> : null}
           <Badge tone={provider.local ? 'neutral' : 'warning'}>{provider.local ? 'Local' : 'Remote'}</Badge>
         </div>
         <p className="mt-0.5 truncate font-mono text-2xs text-muted-foreground">

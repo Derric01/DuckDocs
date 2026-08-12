@@ -108,13 +108,13 @@ export function AskSurface() {
 
           {asking ? (
             <div className="mb-8 animate-slide-up" aria-live="polite" aria-busy="true">
-              <p className="mb-3 text-xs font-semibold text-foreground">DuckDocs</p>
+              <p className="eyebrow mb-2.5">DuckDocs</p>
               {draft ? (
                 // Streamed text is provisional: citations only exist once the
                 // terminal event lands, so this deliberately renders without them.
-                <p className="text-base leading-[1.7] text-foreground">
+                <p className="max-w-[72ch] text-md leading-[1.65] text-foreground">
                   {draft}
-                  <i className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse rounded-full bg-primary align-baseline" />
+                  <i className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-accent align-baseline" />
                 </p>
               ) : (
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -139,7 +139,7 @@ export function AskSurface() {
                 <button
                   key={item}
                   onClick={() => setQuestion(item)}
-                  className="h-8 rounded-full bg-card px-3.5 text-xs text-muted-foreground shadow-xs ring-1 ring-inset ring-border transition-all duration-fast ease-spring hover:text-foreground active:scale-[0.97]"
+                  className="h-7 rounded border border-border bg-card px-2.5 text-xs text-muted-foreground transition-colors duration-fast hover:border-border-strong hover:text-foreground"
                 >
                   {item}
                 </button>
@@ -167,10 +167,10 @@ export function AskSurface() {
               void addFiles(event.dataTransfer.files);
             }}
             className={cn(
-              'rounded-2xl bg-card shadow-md ring-1 ring-inset transition-all duration-200 ease-spring',
+              'rounded-lg border bg-card transition-colors duration-fast',
               dragging
-                ? 'ring-2 ring-primary'
-                : 'ring-border focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
+                ? 'border-accent bg-accent-muted'
+                : 'border-input focus-within:border-ring focus-within:ring-1 focus-within:ring-ring',
             )}
           >
             <textarea
@@ -188,9 +188,9 @@ export function AskSurface() {
               }}
               // The card carries the focus ring; a second one around just the
               // textarea reads as a misaligned box inside the control.
-              className="block w-full resize-none bg-transparent px-4 pb-2 pt-4 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="block w-full resize-none bg-transparent px-3.5 pb-1.5 pt-3 text-md leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/80 focus-visible:ring-0 focus-visible:ring-offset-0"
             />
-            <div className="flex items-center justify-between gap-3 p-2 pl-3">
+            <div className="flex items-center justify-between gap-3 p-1.5 pl-2.5">
               <Button
                 type="button"
                 variant="ghost"
@@ -214,7 +214,7 @@ export function AskSurface() {
                   type="button"
                   variant="secondary"
                   size="sm"
-                  className="size-9 rounded-full p-0"
+                  className="size-8 rounded-md p-0"
                   onClick={stopAsking}
                   aria-label="Stop generating"
                 >
@@ -225,7 +225,7 @@ export function AskSurface() {
                   type="submit"
                   variant="primary"
                   size="sm"
-                  className="size-9 rounded-full p-0"
+                  className="size-8 rounded-md p-0"
                   disabled={!question.trim()}
                   aria-label="Send"
                 >
@@ -235,7 +235,7 @@ export function AskSurface() {
             </div>
           </form>
 
-          <p className="mt-3 flex items-center justify-center gap-1.5 text-2xs text-muted-foreground">
+          <p className="mt-2.5 flex items-center justify-center gap-1.5 text-2xs text-muted-foreground">
             <LockKeyhole className="size-3" aria-hidden />
             {connection === 'ready'
               ? 'Answers cite retrieved passages only. Nothing leaves this machine.'
@@ -261,10 +261,10 @@ const Turn = memo(function Turn({
 }) {
   if (message.role === 'user') {
     return (
-      <article className="mb-8 flex animate-slide-up justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-base leading-relaxed text-primary-foreground shadow-xs">
-          {message.content}
-        </div>
+      // The question is set as a quotation rather than a coloured bubble: it
+      // is the reader's own words, and a filled pill competes with the answer.
+      <article className="mb-7 animate-slide-up border-l-2 border-foreground pl-4">
+        <p className="text-md leading-relaxed text-foreground">{message.content}</p>
       </article>
     );
   }
@@ -273,26 +273,26 @@ const Turn = memo(function Turn({
   const errored = message.state === 'error';
 
   return (
-    <article className="group mb-8 animate-slide-up">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-xs font-semibold text-foreground">DuckDocs</span>
+    <article className="group mb-9 animate-slide-up">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="eyebrow">DuckDocs</span>
         {message.timestamp ? (
-          <span className="font-mono text-2xs tabular-nums text-muted-foreground/70">{message.timestamp}</span>
+          <span className="font-mono text-2xs tabular-nums text-muted-foreground">{message.timestamp}</span>
         ) : null}
       </div>
 
       {refused || errored ? (
-        <div className="flex gap-3 rounded-xl bg-warning-muted p-4">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+        <div className="flex gap-3 rounded-lg border border-warning/25 bg-warning-muted p-3.5">
+          <AlertTriangle className="mt-px size-4 shrink-0 text-warning" aria-hidden />
           <div>
             <p className="text-sm font-semibold text-foreground">
               {errored ? 'Could not reach the API' : 'Not enough evidence'}
             </p>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{message.content}</p>
+            <p className="mt-1 text-sm leading-relaxed text-foreground/75">{message.content}</p>
           </div>
         </div>
       ) : (
-        <div className="text-base leading-[1.7] text-foreground">{message.content}</div>
+        <div className="max-w-[72ch] text-md leading-[1.65] text-foreground">{message.content}</div>
       )}
 
       {message.citations && message.citations.length > 0 ? (
@@ -304,7 +304,7 @@ const Turn = memo(function Turn({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 gap-1.5 px-2 text-2xs"
+            className="h-6 gap-1.5 px-1.5 text-2xs"
             onClick={() => {
               void navigator.clipboard?.writeText(message.content);
               onCopy();
@@ -314,7 +314,7 @@ const Turn = memo(function Turn({
             Copy
           </Button>
           {message.provider ? (
-            <span className="font-mono text-2xs text-muted-foreground/70">{message.provider}</span>
+            <span className="font-mono text-2xs text-muted-foreground">{message.provider}</span>
           ) : null}
         </div>
       ) : null}

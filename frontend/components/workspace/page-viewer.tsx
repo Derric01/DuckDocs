@@ -148,7 +148,7 @@ export function PageViewer({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown} tabIndex={-1}>
-      <div className="material sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border px-2 py-1.5">
+      <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-2 py-1.5">
         <div className="flex items-center gap-0.5">
           <Button
             variant="ghost" size="sm" className="size-8 p-0"
@@ -164,7 +164,7 @@ export function PageViewer({
                 const next = Number.parseInt(event.target.value, 10);
                 if (!Number.isNaN(next)) goTo(next);
               }}
-              className="h-7 w-10 rounded-md bg-transparent text-center font-mono text-xs tabular-nums text-foreground outline-none transition-colors hover:bg-muted focus:bg-secondary"
+              className="h-7 w-10 rounded bg-transparent text-center font-mono text-xs tabular-nums text-foreground outline-none transition-colors hover:bg-muted focus:bg-muted"
             />
             <span className="font-mono tabular-nums">/ {pageCount}</span>
           </span>
@@ -184,7 +184,7 @@ export function PageViewer({
             onClick={() => setFit('width')}
             title="Reset to fit width (0)"
             aria-label={`Zoom ${Math.round(scale * 100)} percent. Reset to fit width.`}
-            className="h-7 min-w-[52px] rounded-md px-1.5 font-mono text-2xs tabular-nums text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="h-7 min-w-[52px] rounded px-1.5 font-mono text-2xs tabular-nums text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             {/* A raw percentage while fitting reads as broken ("29%") even
                 though it is accurate; name the mode instead. */}
@@ -215,12 +215,12 @@ export function PageViewer({
           </div>
         ) : (
           <div
-            className="gpu relative mx-auto overflow-hidden rounded-lg shadow-lg"
+            className="gpu relative mx-auto overflow-hidden rounded border border-border shadow-md"
             style={naturalSize ? { width: naturalSize.width * scale, height: naturalSize.height * scale } : undefined}
           >
             {status === 'loading' ? (
               <Skeleton
-                className="absolute inset-0 rounded-lg"
+                className="absolute inset-0 rounded"
                 style={{ height: naturalSize ? naturalSize.height * scale : 460 }}
               />
             ) : null}
@@ -238,7 +238,7 @@ export function PageViewer({
               }}
               onError={() => setStatus('error')}
               className={cn(
-                'block h-full w-full rounded-lg transition-opacity duration-200 ease-spring',
+                'block h-full w-full transition-opacity duration-200 ease-spring',
                 status === 'ready' ? 'opacity-100' : 'opacity-0',
               )}
             />
@@ -246,7 +246,7 @@ export function PageViewer({
             {highlight && status === 'ready' ? (
               <span
                 aria-hidden
-                className="pointer-events-none absolute z-10 animate-scale-in rounded-[3px] bg-primary/25 ring-2 ring-primary shadow-[0_0_0_9999px_rgba(0,0,0,0.3)]"
+                className="pointer-events-none absolute z-10 animate-scale-in rounded-[2px] bg-accent/20 ring-2 ring-accent shadow-[0_0_0_9999px_rgba(0,0,0,0.3)]"
                 style={{
                   left: `${highlight[0] * 100}%`,
                   top: `${highlight[1] * 100}%`,
@@ -259,7 +259,7 @@ export function PageViewer({
         )}
       </div>
 
-      <p className="shrink-0 border-t border-border px-3 py-1.5 text-center font-mono text-2xs text-muted-foreground/70">
+      <p className="shrink-0 border-t border-border px-3 py-1.5 text-center font-mono text-2xs text-muted-foreground">
         ← → page · +/− zoom · 0 fit
       </p>
     </div>

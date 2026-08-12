@@ -72,7 +72,7 @@ export function CommandPalette({
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
-        className="w-full max-w-lg animate-scale-in overflow-hidden rounded-2xl bg-popover shadow-xl ring-1 ring-inset ring-border"
+        className="w-full max-w-lg animate-scale-in overflow-hidden rounded-lg border border-border bg-popover shadow-xl"
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.preventDefault();
@@ -97,7 +97,7 @@ export function CommandPalette({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search commands…"
             aria-label="Search commands"
-            className="flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground/70"
+            className="flex-1 bg-transparent text-md text-foreground outline-none placeholder:text-muted-foreground/80"
           />
         </div>
         {results.length === 0 ? (
@@ -114,12 +114,12 @@ export function CommandPalette({
                   onMouseEnter={() => setActive(index)}
                   onClick={() => commit(index)}
                   className={cn(
-                    'flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm transition-colors duration-fast',
-                    index === active ? 'bg-primary/10 text-foreground' : 'text-muted-foreground',
+                    'flex h-9 w-full items-center gap-3 rounded px-2.5 text-left text-sm transition-colors duration-fast',
+                    index === active ? 'bg-accent-muted text-foreground' : 'text-muted-foreground',
                   )}
                 >
                   <Icon
-                    className={cn('size-4 shrink-0', index === active ? 'text-primary' : 'text-muted-foreground')}
+                    className={cn('size-4 shrink-0', index === active ? 'text-accent' : 'text-muted-foreground')}
                     aria-hidden
                   />
                   <span className="flex-1">{command.label}</span>

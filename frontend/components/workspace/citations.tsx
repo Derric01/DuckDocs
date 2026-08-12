@@ -74,13 +74,17 @@ export function CitationList({
   const total = groups.reduce((sum, group) => sum + group.passages.length, 0);
 
   return (
-    <section aria-label="Sources" className="mt-5 space-y-2">
-      <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+    <section aria-label="Sources" className="mt-5">
+      <p className="eyebrow mb-2">
         {total} passage{total === 1 ? '' : 's'} from {groups.length} document{groups.length === 1 ? '' : 's'}
       </p>
-      {groups.map((group) => (
-        <CitationCard key={group.documentId} group={group} activeId={activeId} onSelect={onSelect} />
-      ))}
+      {/* One ruled block rather than separate cards: the sources are a list,
+          and stacking bordered boxes doubles every hairline between them. */}
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        {groups.map((group) => (
+          <CitationCard key={group.documentId} group={group} activeId={activeId} onSelect={onSelect} />
+        ))}
+      </div>
     </section>
   );
 }
@@ -105,8 +109,8 @@ function CitationCard({
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-xl bg-card shadow-xs ring-1 ring-inset transition-all duration-fast',
-        isLow ? 'ring-warning/40' : 'ring-border hover:ring-border-strong',
+        'overflow-hidden border-border [&+&]:border-t',
+        isLow && 'bg-warning-muted/40',
       )}
     >
       <button
@@ -119,10 +123,10 @@ function CitationCard({
           }
           setOpen((value) => !value);
         }}
-        className="flex w-full items-center gap-3 p-3 text-left transition-colors duration-fast hover:bg-muted/50"
+        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors duration-fast hover:bg-muted/50"
       >
-        <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-          {isOcr ? <ScanText className="size-3.5" aria-hidden /> : <FileText className="size-3.5" aria-hidden />}
+        <span className="grid size-6 shrink-0 place-items-center rounded-sm border border-border bg-muted text-muted-foreground">
+          {isOcr ? <ScanText className="size-3" aria-hidden /> : <FileText className="size-3" aria-hidden />}
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium text-foreground">{group.documentName}</span>
@@ -132,12 +136,12 @@ function CitationCard({
         {isOcr ? (
           <span
             title={`Lowest OCR confidence in this source: ${Math.round((group.minConfidence ?? 0) * 100)}%`}
-            className="h-1 w-7 shrink-0 overflow-hidden rounded-full bg-muted"
+            className="h-1 w-7 shrink-0 overflow-hidden rounded-sm border border-border bg-muted"
           >
             {/* A track rather than a number: the exact value lives in the
                 evidence panel, this only needs to convey trust at a glance. */}
             <span
-              className={cn('block h-full rounded-full', isLow ? 'bg-warning' : 'bg-success')}
+              className={cn('block h-full', isLow ? 'bg-warning' : 'bg-success')}
               style={{ width: `${(group.minConfidence ?? 0) * 100}%` }}
             />
           </span>
@@ -146,7 +150,7 @@ function CitationCard({
         {!single ? (
           <ChevronDown
             className={cn(
-              'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ease-spring',
+              'size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast',
               open && 'rotate-180',
             )}
             aria-hidden
@@ -155,17 +159,17 @@ function CitationCard({
       </button>
 
       {open && !single ? (
-        <ul className="animate-slide-down space-y-0.5 px-2 pb-2">
+        <ul className="animate-slide-down border-t border-border bg-muted/25 px-2 py-1.5">
           {group.passages.map((passage) => (
             <li key={passage.id}>
               <button
                 onClick={() => onSelect(passage)}
                 className={cn(
-                  'flex w-full items-baseline gap-3 rounded-lg px-2 py-2 text-left transition-colors duration-fast',
-                  passage.id === activeId ? 'bg-primary/10' : 'hover:bg-muted',
+                  'flex w-full items-baseline gap-2.5 rounded px-2 py-1.5 text-left transition-colors duration-fast',
+                  passage.id === activeId ? 'bg-accent-muted' : 'hover:bg-muted',
                 )}
               >
-                <span className="shrink-0 font-mono text-2xs tabular-nums text-primary-vivid">p{passage.page}</span>
+                <span className="shrink-0 font-mono text-2xs tabular-nums text-accent">p{passage.page}</span>
                 <span
                   className={cn(
                     'line-clamp-2 text-xs leading-snug',

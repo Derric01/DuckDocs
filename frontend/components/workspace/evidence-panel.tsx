@@ -37,11 +37,11 @@ export function EvidencePanel({
   return (
     <aside
       aria-label="Evidence inspector"
-      className="flex h-full flex-col border-l border-border bg-grouped max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-50 max-lg:w-[min(440px,92vw)] max-lg:animate-slide-in-right max-lg:shadow-xl"
+      className="flex h-full flex-col border-l border-border bg-background max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-50 max-lg:w-[min(440px,92vw)] max-lg:animate-slide-in-right max-lg:shadow-xl"
     >
-      <div className="material flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
-        <h2 className="text-sm font-semibold">Evidence</h2>
-        <Button variant="ghost" size="sm" className="size-8 p-0" aria-label="Close evidence panel" onClick={onClose}>
+      <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-3.5">
+        <h2 className="eyebrow">Evidence</h2>
+        <Button variant="ghost" size="sm" className="size-7 p-0" aria-label="Close evidence panel" onClick={onClose}>
           <X className="size-4" />
         </Button>
       </div>
@@ -86,7 +86,7 @@ function EvidenceDetail({ evidence }: { evidence: EvidenceRecord }) {
   return (
     <>
       {canPreview ? (
-        <div className="shrink-0 border-b border-border px-3 py-2">
+        <div className="shrink-0 border-b border-border px-3.5 py-1">
           <Tabs value={tab} onValueChange={(value) => setTab(value as 'source' | 'text')}>
             <TabsList className="w-full">
               <TabsTrigger value="source" className="flex-1">
@@ -133,9 +133,9 @@ function EvidenceText({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-          <FileText className="size-4" strokeWidth={1.8} aria-hidden />
+      <div className="flex items-start gap-2.5">
+        <span className="grid size-8 shrink-0 place-items-center rounded-sm border border-border bg-muted text-muted-foreground">
+          <FileText className="size-4" strokeWidth={1.7} aria-hidden />
         </span>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground">{evidence.documentName}</p>
@@ -144,9 +144,9 @@ function EvidenceText({
       </div>
 
       <div className="flex flex-wrap gap-1.5">
-        <Badge>Page {evidence.page}</Badge>
-        <Badge>Lines {evidence.lines}</Badge>
-        <Badge tone={evidence.relevance === 'High' ? 'primary' : 'neutral'}>
+        <Badge tone="outline">Page {evidence.page}</Badge>
+        <Badge tone="outline">Lines {evidence.lines}</Badge>
+        <Badge tone={evidence.relevance === 'High' ? 'accent' : 'neutral'}>
           {evidence.relevance} relevance
         </Badge>
       </div>
@@ -155,8 +155,8 @@ function EvidenceText({
         <div
           role="note"
           className={cn(
-            'flex items-start gap-2.5 rounded-xl p-3 text-xs leading-snug',
-            isLow ? 'bg-warning-muted text-warning' : 'bg-secondary text-muted-foreground',
+            'flex items-start gap-2.5 rounded-lg border p-3 text-xs leading-snug',
+            isLow ? 'border-warning/25 bg-warning-muted text-warning' : 'border-border bg-muted text-muted-foreground',
           )}
         >
           {isLow ? (
@@ -178,13 +178,13 @@ function EvidenceText({
         </div>
       ) : null}
 
-      <div className="rounded-xl bg-card p-4 shadow-xs">
+      <div className="rounded-lg border border-border bg-card p-3.5">
         <p className="text-sm leading-relaxed text-foreground">
-          <mark className="bg-primary/20 text-foreground">{evidence.snippet}</mark>
+          <mark className="bg-accent-muted text-foreground">{evidence.snippet}</mark>
         </p>
       </div>
 
-      <dl className="grid grid-cols-2 gap-4">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-4">
         <Meta label="Anchor" value={ANCHOR_LABEL[evidence.anchorQuality ?? 'line']} />
         <Meta label="Fidelity" value={evidence.fidelity ?? 'Full layout'} />
         <Meta label="Evidence ID" value={evidence.id} />
@@ -205,8 +205,8 @@ function EvidenceText({
 function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-2xs text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 truncate font-mono text-2xs text-foreground/80">{value}</dd>
+      <dt className="eyebrow">{label}</dt>
+      <dd className="mt-1 truncate font-mono text-2xs text-foreground/80">{value}</dd>
     </div>
   );
 }

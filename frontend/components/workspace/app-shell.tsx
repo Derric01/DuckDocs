@@ -22,12 +22,16 @@ import { useWorkspace, type ConnectionState } from '@/components/workspace/works
 import { cn } from '@/lib/utils';
 import type { Surface } from '@/lib/types';
 
-/** Each surface keeps one hue everywhere it appears, so colour teaches. */
-const NAV: Array<{ id: Surface; label: string; icon: LucideIcon; tile: string }> = [
-  { id: 'intelligence', label: 'Ask', icon: MessageSquareText, tile: 'bg-ios-orange' },
-  { id: 'library', label: 'Library', icon: LibraryBig, tile: 'bg-ios-teal' },
-  { id: 'review', label: 'Review', icon: Highlighter, tile: 'bg-ios-pink' },
-  { id: 'settings', label: 'Settings', icon: Settings2, tile: 'bg-ios-gray' },
+/**
+ * Nav is text-first. The previous build gave each surface a saturated icon
+ * tile, which turned the rail into the loudest thing on screen — wrong when
+ * the documents are supposed to be.
+ */
+const NAV: Array<{ id: Surface; label: string; icon: LucideIcon }> = [
+  { id: 'intelligence', label: 'Ask', icon: MessageSquareText },
+  { id: 'library', label: 'Library', icon: LibraryBig },
+  { id: 'review', label: 'Review', icon: Highlighter },
+  { id: 'settings', label: 'Settings', icon: Settings2 },
 ];
 
 const TITLES: Record<Surface, string> = {
@@ -91,35 +95,27 @@ export function AppShell({ surface, children }: { surface: Surface; children: Re
         <aside
           aria-label="Primary"
           className={cn(
-            'material z-50 flex w-[248px] shrink-0 flex-col border-r border-border',
+            'z-50 flex w-[228px] shrink-0 flex-col border-r border-border bg-background',
             'max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:transition-transform max-lg:duration-slow max-lg:ease-spring',
             navOpen ? 'max-lg:translate-x-0 max-lg:shadow-xl' : 'max-lg:-translate-x-full',
           )}
         >
-          <div className="px-4 pb-3 pt-4">
-            <Link href="/" className="flex items-center gap-2.5 rounded-lg px-1 py-1">
-              <span className="icon-tile size-7 bg-gradient-to-br from-ios-orange to-ios-pink text-xs font-bold">
-                D
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-semibold tracking-tight">DuckDocs</span>
-                <span className="block truncate text-2xs text-muted-foreground">Evidence workspace</span>
-              </span>
+          <div className="border-b border-border px-4 py-3.5">
+            <Link href="/" className="block rounded">
+              <span className="block font-display text-lg leading-none text-foreground">DuckDocs</span>
+              <span className="eyebrow mt-1 block">Evidence workspace</span>
             </Link>
           </div>
 
-          <div className="px-3 pb-2">
-            <Button variant="secondary" className="w-full justify-start" onClick={() => navigate('intelligence')}>
-              <Plus className="size-4" aria-hidden />
+          <div className="px-3 pt-3">
+            <Button variant="primary" className="w-full justify-start" onClick={() => navigate('intelligence')}>
+              <Plus className="size-3.5" aria-hidden />
               New question
             </Button>
           </div>
 
-          <nav aria-label="Workspace" className="flex-1 overflow-y-auto px-3 py-2">
-            <p className="px-2 pb-1.5 pt-3 text-2xs font-semibold uppercase tracking-wider text-muted-foreground/70">
-              Workspace
-            </p>
-            <ul className="space-y-0.5">
+          <nav aria-label="Workspace" className="flex-1 overflow-y-auto px-3 py-3">
+            <ul className="space-y-px">
               {NAV.map((item) => {
                 const Icon = item.icon;
                 const active = item.id === surface;
@@ -129,16 +125,27 @@ export function AppShell({ surface, children }: { surface: Surface; children: Re
                       href={`/${item.id}`}
                       aria-current={active ? 'page' : undefined}
                       className={cn(
-                        'group flex h-9 items-center gap-2.5 rounded-lg px-2 text-sm font-medium',
+                        'group relative flex h-8 items-center gap-2.5 rounded px-2 text-sm',
                         'transition-colors duration-fast',
                         active
-                          ? 'bg-primary/10 text-primary'
-                          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                          ? 'bg-muted font-medium text-foreground'
+                          : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
                       )}
                     >
-                      <span className={cn('icon-tile size-6', item.tile)}>
-                        <Icon className="size-[13px]" strokeWidth={2.4} aria-hidden />
-                      </span>
+                      {/* A rule at the leading edge marks the active surface —
+                          the same device the tabs and table rows use. */}
+                      <span
+                        aria-hidden
+                        className={cn(
+                          'absolute inset-y-1 left-0 w-[2px] rounded-full transition-colors duration-fast',
+                          active ? 'bg-foreground' : 'bg-transparent',
+                        )}
+                      />
+                      <Icon
+                        className={cn('size-[15px] shrink-0', active ? 'text-foreground' : 'text-muted-foreground')}
+                        strokeWidth={1.8}
+                        aria-hidden
+                      />
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
                       {item.id === 'library' && documents.length > 0 ? (
                         <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
@@ -152,9 +159,9 @@ export function AppShell({ surface, children }: { surface: Surface; children: Re
             </ul>
           </nav>
 
-          <div className="p-3">
-            <div className="flex items-start gap-2.5 rounded-xl bg-secondary p-3">
-              <span className={cn('mt-1 size-1.5 shrink-0 rounded-full', status.dot)} aria-hidden />
+          <div className="border-t border-border p-3">
+            <div className="flex items-start gap-2.5">
+              <span className={cn('mt-[5px] size-1.5 shrink-0 rounded-full', status.dot)} aria-hidden />
               <div className="min-w-0">
                 <p className="text-xs font-medium text-foreground">{status.label}</p>
                 <p className="mt-0.5 text-2xs leading-snug text-muted-foreground">{status.detail}</p>
@@ -172,23 +179,23 @@ export function AppShell({ surface, children }: { surface: Surface; children: Re
         ) : null}
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="material flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
+          <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3">
             <Button
               variant="ghost"
               size="sm"
-              className="size-9 p-0 lg:hidden"
+              className="size-8 p-0 lg:hidden"
               aria-label="Open navigation"
               onClick={() => setNavOpen(true)}
             >
               <Menu className="size-[18px]" />
             </Button>
-            <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">{TITLES[surface]}</h1>
+            <h1 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{TITLES[surface]}</h1>
 
             <button
               onClick={() => setPaletteOpen(true)}
               className={cn(
-                'flex h-9 items-center gap-2 rounded-lg bg-secondary px-3 text-xs text-muted-foreground',
-                'transition-colors duration-fast hover:bg-muted sm:w-56',
+                'flex h-8 items-center gap-2 rounded-md border border-border bg-card px-2.5 text-xs text-muted-foreground',
+                'transition-colors duration-fast hover:border-border-strong hover:text-foreground sm:w-56',
               )}
             >
               <Search className="size-3.5 shrink-0" aria-hidden />
@@ -200,7 +207,7 @@ export function AppShell({ surface, children }: { surface: Surface; children: Re
               <Button
                 variant={panelOpen ? 'subtle' : 'ghost'}
                 size="sm"
-                className="size-9 p-0"
+                className="size-8 p-0"
                 aria-pressed={panelOpen}
                 aria-label={panelOpen ? 'Hide evidence panel' : 'Show evidence panel'}
                 onClick={() => setPanelOpen((open) => !open)}

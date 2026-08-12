@@ -12,7 +12,6 @@ import {
   FileType2,
   LoaderCircle,
   Search,
-  Sparkles,
   Upload,
   type LucideIcon,
 } from 'lucide-react';
@@ -60,20 +59,26 @@ const STAGE_LABEL: Record<string, string> = {
 
 /**
  * Colour is an index, not decoration: a hue always means the same kind of
- * file, so a long library becomes scannable without reading extensions.
+ * file, so a long library becomes scannable without reading extensions. The
+ * glyph is tinted rather than reversed out of a saturated tile — twenty
+ * saturated tiles in a column is a colour chart, not a document list.
  */
-function kindFor(type: string): { icon: LucideIcon; tile: string } {
+function kindFor(type: string): { icon: LucideIcon; mark: string } {
   const upper = type.toUpperCase();
-  if (upper === 'PDF') return { icon: FileType2, tile: 'bg-ios-red' };
-  if (['CSV', 'XLSX'].includes(upper)) return { icon: FileSpreadsheet, tile: 'bg-ios-green' };
+  if (upper === 'PDF') return { icon: FileType2, mark: 'border-kind-slide/25 bg-kind-slide/10 text-kind-slide' };
+  if (['CSV', 'XLSX'].includes(upper)) {
+    return { icon: FileSpreadsheet, mark: 'border-kind-sheet/25 bg-kind-sheet/10 text-kind-sheet' };
+  }
   if (['PNG', 'JPG', 'JPEG', 'WEBP', 'TIFF', 'TIF', 'BMP'].includes(upper)) {
-    return { icon: FileImage, tile: 'bg-ios-purple' };
+    return { icon: FileImage, mark: 'border-kind-image/25 bg-kind-image/10 text-kind-image' };
   }
   if (['TS', 'TSX', 'JS', 'JSX', 'PY', 'JSON', 'XML', 'YAML', 'YML', 'SQL', 'GO', 'RS'].includes(upper)) {
-    return { icon: FileCode2, tile: 'bg-ios-indigo' };
+    return { icon: FileCode2, mark: 'border-kind-code/25 bg-kind-code/10 text-kind-code' };
   }
-  if (['DOCX', 'PPTX'].includes(upper)) return { icon: FileText, tile: 'bg-ios-blue' };
-  return { icon: FileText, tile: 'bg-ios-gray' };
+  if (['DOCX', 'PPTX'].includes(upper)) {
+    return { icon: FileText, mark: 'border-kind-doc/25 bg-kind-doc/10 text-kind-doc' };
+  }
+  return { icon: FileText, mark: 'border-border bg-muted text-kind-text' };
 }
 
 export function LibrarySurface() {
@@ -117,10 +122,10 @@ export function LibrarySurface() {
   const totalPages = documents.reduce((total, document) => total + document.pages, 0);
 
   return (
-    <div className="mx-auto max-w-4xl px-8 pb-16 pt-8 max-sm:px-4 max-sm:pt-5">
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div className="mx-auto max-w-5xl px-8 pb-16 pt-8 max-sm:px-4 max-sm:pt-5">
+      <header className="mb-7 flex flex-wrap items-end justify-between gap-4 border-b border-border pb-5">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Library</h2>
+          <h2 className="font-display text-3xl text-foreground">Library</h2>
           <p className="mt-1.5 text-sm text-muted-foreground">
             {documents.length} document{documents.length === 1 ? '' : 's'} · {totalPages} indexed page
             {totalPages === 1 ? '' : 's'} · stored on this machine
@@ -131,7 +136,7 @@ export function LibrarySurface() {
           onClick={() => inputRef.current?.click()}
           disabled={uploading || connection === 'offline'}
         >
-          <Upload className="size-4" aria-hidden />
+          <Upload className="size-3.5" aria-hidden />
           Add documents
         </Button>
       </header>
@@ -154,23 +159,16 @@ export function LibrarySurface() {
           void addFiles(event.dataTransfer.files);
         }}
         className={cn(
-          'flex w-full items-center gap-4 rounded-2xl border-2 border-dashed p-5 text-left',
-          'transition-all duration-200 ease-spring active:scale-[0.995]',
-          dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-border-strong hover:bg-card',
+          'flex w-full items-center gap-3 rounded-lg border border-dashed px-4 py-3.5 text-left',
+          'transition-colors duration-fast',
+          dragging ? 'border-accent bg-accent-muted' : 'border-border-strong hover:border-foreground/30 hover:bg-card',
         )}
       >
-        <span
-          className={cn(
-            'icon-tile size-11 transition-colors duration-200',
-            dragging ? 'bg-ios-orange' : 'bg-gradient-to-br from-ios-orange to-ios-pink',
-          )}
-        >
-          {uploading ? (
-            <LoaderCircle className="size-5 animate-spin" />
-          ) : (
-            <Upload className="size-5" strokeWidth={2} />
-          )}
-        </span>
+        {uploading ? (
+          <LoaderCircle className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />
+        ) : (
+          <Upload className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.6} aria-hidden />
+        )}
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium text-foreground">
             {uploading ? 'Adding to your library…' : 'Drop files here, or browse'}
@@ -189,7 +187,7 @@ export function LibrarySurface() {
         onChange={(event) => void addFiles(event.target.files)}
       />
 
-      <div className="mb-3 mt-6 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-4 mt-7 flex flex-wrap items-end justify-between gap-3">
         <Tabs value={filter} onValueChange={(value) => setFilter(value as Filter)}>
           <TabsList>
             {(
@@ -207,9 +205,9 @@ export function LibrarySurface() {
           </TabsList>
         </Tabs>
 
-        <div className="relative w-full sm:w-56">
+        <div className="relative w-full sm:w-52">
           <Search
-            className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+            className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
             aria-hidden
           />
           <Input
@@ -217,21 +215,21 @@ export function LibrarySurface() {
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Filter by name"
             aria-label="Filter documents by name"
-            className="h-9 pl-8 text-sm"
+            className="h-8 pl-8 text-sm"
           />
         </div>
       </div>
 
       {documentsLoading ? (
-        <div className="space-y-2">
+        <div className="overflow-hidden rounded-lg border border-border">
           {[0, 1, 2].map((row) => (
-            <Skeleton key={row} className="h-16 rounded-xl" />
+            <Skeleton key={row} className="h-12 rounded-none" />
           ))}
         </div>
       ) : visible.length === 0 ? (
         <EmptyState
           icon={documents.length ? Search : Upload}
-          title={documents.length ? 'No matching documents' : 'Nothing here yet 📂'}
+          title={documents.length ? 'No matching documents' : 'Nothing here yet'}
           description={
             documents.length
               ? 'Try a different name, or clear the current filter.'
@@ -247,7 +245,23 @@ export function LibrarySurface() {
           }
         />
       ) : (
-        <div className="list-group">
+        /**
+         * A real table rather than a list of cards. Column alignment is what
+         * makes twenty documents comparable at a glance — the whole reason a
+         * library view exists.
+         */
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <div
+            role="row"
+            className="table-head flex items-center gap-3 px-3 py-2"
+            aria-hidden
+          >
+            <span className="min-w-0 flex-1">Document</span>
+            <span className="hidden w-[104px] shrink-0 md:block">Fidelity</span>
+            <span className="w-[112px] shrink-0 max-sm:w-auto">Status</span>
+            <span className="hidden w-[92px] shrink-0 lg:block">Updated</span>
+            <span className="w-7 shrink-0" />
+          </div>
           {visible.map((document) => (
             <DocumentRow key={document.id} document={document} onOpen={() => void inspectDocument(document)} />
           ))}
@@ -258,7 +272,7 @@ export function LibrarySurface() {
 }
 
 function DocumentRow({ document, onOpen }: { document: DocumentRecord; onOpen: () => void }) {
-  const { icon: Icon, tile } = kindFor(document.type);
+  const { icon: Icon, mark } = kindFor(document.type);
   const status = STATUS[document.status];
   const StatusIcon = status.icon;
   const processing = document.status === 'processing';
@@ -266,28 +280,28 @@ function DocumentRow({ document, onOpen }: { document: DocumentRecord; onOpen: (
   const hasSummary = Boolean(document.summary);
 
   return (
-    <div className="border-b border-border/70 last:border-b-0">
-      <div className="flex min-h-[60px] items-center gap-3 px-4 transition-colors duration-fast hover:bg-muted/40">
+    <div className="table-row-hairline border-t border-border">
+      <div className="flex min-h-[48px] items-center gap-3 px-3 transition-colors duration-fast hover:bg-muted/40">
         <button
           onClick={() => (hasSummary ? setExpanded((value) => !value) : onOpen())}
           aria-expanded={hasSummary ? expanded : undefined}
-          className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
+          className="flex min-w-0 flex-1 items-center gap-2.5 py-2 text-left"
         >
-          <span className={cn('icon-tile size-9', tile)}>
-            <Icon className="size-[18px]" strokeWidth={2} aria-hidden />
+          <span className={cn('kind-mark', mark)}>
+            <Icon className="size-4" strokeWidth={1.7} aria-hidden />
           </span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-medium text-foreground">{document.name}</span>
             <span className="flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground">
-              <span className="truncate">
-                {document.type} · {document.size} · {document.pages} page{document.pages === 1 ? '' : 's'}
+              <span className="truncate font-mono">
+                {document.type} · {document.size} · {document.pages}p
               </span>
               {/* Without this the summary is invisible: nothing else on the row
                   says the name is a disclosure rather than a link. */}
               {hasSummary ? (
-                <span className="flex shrink-0 items-center gap-0.5 text-primary-vivid">
+                <span className="flex shrink-0 items-center gap-0.5 text-accent">
                   <ChevronDown
-                    className={cn('size-3 transition-transform duration-200 ease-spring', expanded && 'rotate-180')}
+                    className={cn('size-3 transition-transform duration-fast', expanded && 'rotate-180')}
                     aria-hidden
                   />
                   Summary
@@ -297,11 +311,11 @@ function DocumentRow({ document, onOpen }: { document: DocumentRecord; onOpen: (
           </span>
         </button>
 
-        <span className="hidden shrink-0 md:block">
-          <Badge tone={document.fidelity === 'OCR dependent' ? 'primary' : 'neutral'}>{document.fidelity}</Badge>
+        <span className="hidden w-[104px] shrink-0 md:block">
+          <Badge tone={document.fidelity === 'OCR dependent' ? 'accent' : 'outline'}>{document.fidelity}</Badge>
         </span>
 
-        <span className="w-[108px] shrink-0 max-sm:w-auto">
+        <span className="w-[112px] shrink-0 max-sm:w-auto">
           {processing && typeof document.progress === 'number' ? (
             <span className="flex items-center gap-2">
               <Progress value={document.progress} label={`Ingest progress for ${document.name}`} />
@@ -314,35 +328,34 @@ function DocumentRow({ document, onOpen }: { document: DocumentRecord; onOpen: (
           )}
         </span>
 
-        <span className="hidden w-[92px] shrink-0 text-xs text-muted-foreground lg:block">
+        <span className="hidden w-[92px] shrink-0 truncate text-2xs text-muted-foreground lg:block">
           {processing && document.stage ? (STAGE_LABEL[document.stage] ?? document.stage) : document.updated}
         </span>
 
         <button
           onClick={onOpen}
           aria-label={`Open evidence for ${document.name}`}
-          className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground"
+          className="grid size-7 shrink-0 place-items-center rounded text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground"
         >
           <ChevronRight className="size-4" aria-hidden />
         </button>
       </div>
 
       {hasSummary && expanded ? (
-        <div className="animate-slide-down px-4 pb-4 pl-[64px] max-sm:pl-4">
-          <div className="mb-2 flex flex-wrap items-center gap-2 text-muted-foreground">
-            <Sparkles className="size-3.5 text-ios-purple" aria-hidden />
-            <span className="text-2xs font-semibold uppercase tracking-wider">Summary</span>
+        <div className="animate-slide-down border-t border-border bg-muted/30 px-3 py-3.5 pl-[54px] max-sm:pl-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="eyebrow">Summary</span>
             {/* Extractive is verbatim document text; abstractive is model
                 output. That changes how much a reader should trust the
                 wording, so it is always labeled. */}
-            <Badge tone={document.summaryMethod === 'abstractive' ? 'warning' : 'neutral'}>
+            <Badge tone={document.summaryMethod === 'abstractive' ? 'warning' : 'outline'}>
               {document.summaryMethod === 'abstractive' ? 'Model written' : 'From the document'}
             </Badge>
             {document.summaryProvider ? (
-              <span className="font-mono text-2xs opacity-70">{document.summaryProvider}</span>
+              <span className="font-mono text-2xs text-muted-foreground">{document.summaryProvider}</span>
             ) : null}
           </div>
-          <p className="max-w-[76ch] text-sm leading-relaxed text-muted-foreground">{document.summary}</p>
+          <p className="max-w-[78ch] text-sm leading-relaxed text-foreground/80">{document.summary}</p>
         </div>
       ) : null}
     </div>

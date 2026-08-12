@@ -27,22 +27,30 @@ import { cn } from '@/lib/utils';
 /* -- Card ---------------------------------------------------------------- */
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('rounded-xl bg-card text-card-foreground shadow-sm', className)} {...props} />;
+  return (
+    <div className={cn('rounded-lg border border-border bg-card text-card-foreground', className)} {...props} />
+  );
 }
 
 /* -- Badge --------------------------------------------------------------- */
 
+/**
+ * A chip is a tinted fill with a hairline of its own hue. Both together mean
+ * the tone survives at 11px, where a fill alone goes muddy and a border alone
+ * disappears.
+ */
 const badgeVariants = cva(
-  'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs font-medium leading-none whitespace-nowrap',
+  'inline-flex items-center gap-1 rounded border px-1.5 py-[3px] text-2xs font-medium leading-none whitespace-nowrap',
   {
     variants: {
       tone: {
-        neutral: 'bg-muted text-muted-foreground',
-        primary: 'bg-primary-muted text-primary',
-        success: 'bg-success-muted text-success',
-        warning: 'bg-warning-muted text-warning',
-        destructive: 'bg-destructive-muted text-destructive',
-        outline: 'ring-1 ring-inset ring-border text-muted-foreground',
+        neutral: 'border-border bg-muted text-muted-foreground',
+        primary: 'border-border-strong bg-primary-muted text-primary',
+        accent: 'border-accent/25 bg-accent-muted text-accent',
+        success: 'border-success/20 bg-success-muted text-success',
+        warning: 'border-warning/25 bg-warning-muted text-warning',
+        destructive: 'border-destructive/20 bg-destructive-muted text-destructive',
+        outline: 'border-border text-muted-foreground',
       },
     },
     defaultVariants: { tone: 'neutral' },
@@ -74,10 +82,10 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       <input
         ref={ref}
         className={cn(
-          'h-10 w-full rounded-md bg-secondary px-3 text-base text-foreground',
-          'ring-1 ring-inset ring-transparent transition-all duration-fast',
-          'placeholder:text-muted-foreground/70',
-          'focus:bg-card focus:ring-2 focus:ring-ring focus-visible:ring-offset-0',
+          'h-9 w-full rounded-md border border-input bg-card px-2.5 text-md text-foreground',
+          'transition-colors duration-fast',
+          'placeholder:text-muted-foreground/80',
+          'focus:border-ring focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0',
           'disabled:opacity-50',
           className,
         )}
@@ -102,7 +110,7 @@ export function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <label htmlFor={htmlFor} className="text-sm font-medium text-foreground">
+      <label htmlFor={htmlFor} className="eyebrow block text-foreground">
         {label}
       </label>
       {children}
@@ -148,10 +156,11 @@ export const Switch = forwardRef<
     <SwitchPrimitive.Root
       ref={ref}
       className={cn(
-        // iOS switch proportions: wide track, large thumb, full round.
-        'peer inline-flex h-[31px] w-[51px] shrink-0 cursor-pointer items-center rounded-full',
-        'transition-colors duration-200 ease-spring',
-        'data-[state=checked]:bg-success data-[state=unchecked]:bg-border-strong',
+        // Tighter than the iOS switch it replaces: this UI is dense, and a
+        // 51px track dominated every settings row it sat in.
+        'peer inline-flex h-[22px] w-[38px] shrink-0 cursor-pointer items-center rounded-full border border-transparent',
+        'transition-colors duration-fast',
+        'data-[state=checked]:bg-primary data-[state=unchecked]:border-input data-[state=unchecked]:bg-muted',
         'disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
@@ -159,9 +168,10 @@ export const Switch = forwardRef<
     >
       <SwitchPrimitive.Thumb
         className={cn(
-          'pointer-events-none block size-[27px] rounded-full bg-white shadow-sm ring-0',
-          'transition-transform duration-200 ease-spring',
-          'data-[state=checked]:translate-x-[22px] data-[state=unchecked]:translate-x-0.5',
+          'pointer-events-none block size-[18px] rounded-full shadow-sm ring-0',
+          'transition-transform duration-fast ease-spring',
+          'data-[state=checked]:translate-x-[18px] data-[state=checked]:bg-primary-foreground',
+          'data-[state=unchecked]:translate-x-0.5 data-[state=unchecked]:bg-card',
         )}
       />
     </SwitchPrimitive.Root>
@@ -180,8 +190,9 @@ export const TabsList = forwardRef<
     <TabsPrimitive.List
       ref={ref}
       className={cn(
-        // The iOS segmented control: recessed track, raised active segment.
-        'inline-flex items-center gap-0.5 rounded-lg bg-secondary p-0.5',
+        // Underlined tabs rather than a segmented pill: they sit flush with the
+        // rule below them, which is how a ruled layout stays ruled.
+        'inline-flex items-center gap-4 border-b border-border',
         className,
       )}
       {...props}
@@ -197,10 +208,10 @@ export const TabsTrigger = forwardRef<
     <TabsPrimitive.Trigger
       ref={ref}
       className={cn(
-        'inline-flex h-7 items-center justify-center gap-1.5 rounded-[7px] px-3 text-xs font-medium',
-        'text-muted-foreground transition-all duration-fast ease-spring',
+        'relative -mb-px inline-flex h-8 items-center justify-center gap-1.5 border-b-2 border-transparent px-0.5',
+        'text-xs font-medium text-muted-foreground transition-colors duration-fast',
         'hover:text-foreground',
-        'data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-xs',
+        'data-[state=active]:border-foreground data-[state=active]:text-foreground',
         className,
       )}
       {...props}
@@ -218,10 +229,10 @@ export function Progress({ value, label, className }: { value: number; label?: s
     <ProgressPrimitive.Root
       value={clamped}
       aria-label={label ?? 'Progress'}
-      className={cn('relative h-1 w-full overflow-hidden rounded-full bg-muted', className)}
+      className={cn('relative h-1 w-full overflow-hidden rounded-sm bg-muted', className)}
     >
       <ProgressPrimitive.Indicator
-        className="h-full rounded-full bg-primary transition-transform duration-slow ease-spring"
+        className="h-full rounded-sm bg-accent transition-transform duration-slow ease-spring"
         style={{ transform: `translateX(-${100 - clamped}%)` }}
       />
     </ProgressPrimitive.Root>
@@ -255,8 +266,7 @@ export function Tooltip({ content, children }: { content: string; children: Reac
         <TooltipPrimitive.Content
           sideOffset={6}
           className={cn(
-            'z-50 rounded-md bg-popover px-2 py-1 text-2xs text-popover-foreground shadow-md',
-            'ring-1 ring-inset ring-border',
+            'z-50 rounded border border-border bg-popover px-2 py-1 text-2xs text-popover-foreground shadow-md',
             'animate-scale-in',
           )}
         >
@@ -291,13 +301,13 @@ export function DialogContent({
       <DialogPrimitive.Content
         className={cn(
           'fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2',
-          'animate-scale-in rounded-2xl bg-popover p-6 shadow-xl ring-1 ring-inset ring-border',
+          'animate-scale-in rounded-xl border border-border bg-popover p-6 shadow-xl',
           className,
         )}
       >
         <div className="mb-5 flex items-start justify-between gap-4">
           <div className="space-y-1">
-            <DialogPrimitive.Title className="text-lg font-semibold text-foreground">
+            <DialogPrimitive.Title className="font-display text-xl text-foreground">
               {title}
             </DialogPrimitive.Title>
             {description ? (
@@ -336,11 +346,11 @@ export function EmptyState({
 }) {
   return (
     <div className={cn('mx-auto flex max-w-sm flex-col items-center px-4 py-16 text-center', className)}>
-      <div className="mb-4 grid size-12 place-items-center rounded-2xl bg-muted text-muted-foreground">
-        <Icon className="size-5" strokeWidth={1.6} aria-hidden />
+      <div className="mb-4 grid size-11 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
+        <Icon className="size-[18px]" strokeWidth={1.5} aria-hidden />
       </div>
-      <h3 className="text-base font-semibold text-foreground">{title}</h3>
-      <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{description}</p>
+      <h3 className="font-display text-xl text-foreground">{title}</h3>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
       {action ? <div className="mt-6">{action}</div> : null}
     </div>
   );
@@ -350,7 +360,7 @@ export function EmptyState({
 
 export function Kbd({ children }: { children: ReactNode }) {
   return (
-    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded bg-muted px-1.5 font-mono text-[10px] text-muted-foreground">
+    <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-sm border border-border bg-muted px-1 font-mono text-[10px] text-muted-foreground">
       {children}
     </kbd>
   );

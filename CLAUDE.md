@@ -151,9 +151,14 @@ of a scanned document is processed; there is no page cap.
   Colours come from the theme (`bg-card`, `text-muted-foreground`), never raw
   hex or `bg-[#...]`; a hardcoded colour is a bug. Add a variable in
   `globals.css` and map it in `tailwind.config.ts` instead.
-- The visual language is Apple/iOS: grouped inset lists on a tinted canvas,
-  systemBlue as the only accent, larger radii, layered soft shadows,
-  translucent chrome (`.material`), and the `ease-spring` curve for motion.
+- The visual language is editorial legal-tech (Hebbia/Legora register, not iOS):
+  a warm paper canvas, an ink-inverted `primary` button (never a brand hue —
+  that's what the orange-vs-amber collision taught), a single desaturated
+  slate `accent` reserved for selection/focus/citations, hairline borders
+  instead of shadows, small radii, real data tables over floating cards, and a
+  serif `font-display` for page titles and the landing hero only. Document
+  kind gets its own index (`kind-doc`/`kind-sheet`/`kind-slide`/`kind-image`/
+  `kind-code`/`kind-text`) — colour as data, not decoration.
 - Components follow the shadcn pattern (Radix primitive + CVA variants + `cn`),
   authored in-repo rather than installed, so they can be edited freely.
 - Every interactive element needs hover / focus-visible / disabled states and an
