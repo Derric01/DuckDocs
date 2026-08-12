@@ -6,11 +6,12 @@
  * without a page image fall back to the text view automatically.
  */
 
-import { AlertTriangle, FileText, PanelRight, ScanText, X } from 'lucide-react';
+import { AlertTriangle, PanelRight, ScanText, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, EmptyState, Tabs, TabsList, TabsTrigger } from '@/components/ui';
 import { PageViewer } from '@/components/workspace/page-viewer';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
+import { kindFor } from '@/lib/document-kind';
 import { cn } from '@/lib/utils';
 import type { AnchorQuality, EvidenceRecord } from '@/lib/types';
 
@@ -130,12 +131,13 @@ function EvidenceText({
   const confidence = evidence.ocrConfidence;
   const isOcr = evidence.fidelity === 'OCR dependent' || typeof confidence === 'number';
   const isLow = typeof confidence === 'number' && confidence < LOW_CONFIDENCE;
+  const { icon: KindIcon, mark } = kindFor(evidence.documentName);
 
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-2.5">
-        <span className="grid size-8 shrink-0 place-items-center rounded-sm border border-border bg-muted text-muted-foreground">
-          <FileText className="size-4" strokeWidth={1.7} aria-hidden />
+        <span className={cn('kind-mark size-8', mark)}>
+          <KindIcon className="size-4" strokeWidth={1.7} aria-hidden />
         </span>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground">{evidence.documentName}</p>

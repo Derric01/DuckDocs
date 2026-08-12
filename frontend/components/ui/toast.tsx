@@ -61,7 +61,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   ? 'border-destructive/20 bg-destructive-muted text-destructive'
                   : message.tone === 'success'
                     ? 'border-success/20 bg-success-muted text-success'
-                    : 'border-border bg-muted text-muted-foreground',
+                    : 'border-accent/20 bg-accent-muted text-accent',
               )}
             >
               {message.tone === 'error' ? (

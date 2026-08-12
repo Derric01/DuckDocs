@@ -18,6 +18,7 @@ import {
 } from '@/components/ui';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
 import { duckDocsApi, type ProviderConfigRecord } from '@/lib/api/client';
+import { cn } from '@/lib/utils';
 import { applyDensity, applyTheme, readDensity, readTheme, type Density, type ThemeChoice } from '@/lib/theme';
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -283,7 +284,16 @@ function ProviderRow({
   const label = PROVIDER_LABEL[provider.providerType] ?? provider.providerType;
   return (
     <div className="table-row-hairline flex min-h-[64px] items-center gap-3 px-4 py-2.5">
-      <span className="grid size-8 shrink-0 place-items-center rounded-sm border border-border bg-muted text-xs font-semibold text-muted-foreground">
+      {/* Tinted the same way the Local/Remote badge beside it reads: this is
+          the one place local-vs-remote is worth a colour, not decoration. */}
+      <span
+        className={cn(
+          'grid size-8 shrink-0 place-items-center rounded-sm border text-xs font-semibold',
+          provider.local
+            ? 'border-success/25 bg-success-muted text-success'
+            : 'border-accent/25 bg-accent-muted text-accent',
+        )}
+      >
         {label.slice(0, 1)}
       </span>
       <div className="min-w-0 flex-1">

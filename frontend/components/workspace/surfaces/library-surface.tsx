@@ -5,11 +5,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  FileCode2,
-  FileImage,
-  FileSpreadsheet,
-  FileText,
-  FileType2,
   LoaderCircle,
   Search,
   Upload,
@@ -28,6 +23,7 @@ import {
   TabsTrigger,
 } from '@/components/ui';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
+import { kindFor } from '@/lib/document-kind';
 import { cn } from '@/lib/utils';
 import type { DocumentRecord, DocumentStatus } from '@/lib/types';
 
@@ -56,30 +52,6 @@ const STAGE_LABEL: Record<string, string> = {
   embedding: 'Building index',
   indexing: 'Indexing',
 };
-
-/**
- * Colour is an index, not decoration: a hue always means the same kind of
- * file, so a long library becomes scannable without reading extensions. The
- * glyph is tinted rather than reversed out of a saturated tile — twenty
- * saturated tiles in a column is a colour chart, not a document list.
- */
-function kindFor(type: string): { icon: LucideIcon; mark: string } {
-  const upper = type.toUpperCase();
-  if (upper === 'PDF') return { icon: FileType2, mark: 'border-kind-slide/25 bg-kind-slide/10 text-kind-slide' };
-  if (['CSV', 'XLSX'].includes(upper)) {
-    return { icon: FileSpreadsheet, mark: 'border-kind-sheet/25 bg-kind-sheet/10 text-kind-sheet' };
-  }
-  if (['PNG', 'JPG', 'JPEG', 'WEBP', 'TIFF', 'TIF', 'BMP'].includes(upper)) {
-    return { icon: FileImage, mark: 'border-kind-image/25 bg-kind-image/10 text-kind-image' };
-  }
-  if (['TS', 'TSX', 'JS', 'JSX', 'PY', 'JSON', 'XML', 'YAML', 'YML', 'SQL', 'GO', 'RS'].includes(upper)) {
-    return { icon: FileCode2, mark: 'border-kind-code/25 bg-kind-code/10 text-kind-code' };
-  }
-  if (['DOCX', 'PPTX'].includes(upper)) {
-    return { icon: FileText, mark: 'border-kind-doc/25 bg-kind-doc/10 text-kind-doc' };
-  }
-  return { icon: FileText, mark: 'border-border bg-muted text-kind-text' };
-}
 
 export function LibrarySurface() {
   const { documents, documentsLoading, uploadDocuments, inspectDocument, connection } = useWorkspace();

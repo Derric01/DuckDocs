@@ -2,29 +2,54 @@ import { ArrowRight, FileSearch, LockKeyhole, ScanText, ShieldCheck } from 'luci
 import Link from 'next/link';
 import { Badge, Button } from '@/components/ui';
 
+/**
+ * Each pillar's tint carries the same meaning it has everywhere else in the
+ * app: accent marks citations/evidence, success marks the local/private
+ * guarantee, and the image hue marks OCR — it is the same colour a scanned
+ * page gets in the library. Decoration that happens to be true.
+ */
 const PILLARS = [
   {
     icon: FileSearch,
+    tint: 'border-accent/25 bg-accent-muted text-accent',
     title: 'Evidence is an object',
     body: 'Every claim carries a citation that opens the exact passage it came from — page, lines, and confidence included.',
   },
   {
     icon: LockKeyhole,
+    tint: 'border-success/25 bg-success-muted text-success',
     title: 'Local by default',
     body: 'Documents, the search index, and OCR all run on this machine. No account, no telemetry, no background uploads.',
   },
   {
     icon: ScanText,
+    tint: 'border-kind-image/25 bg-kind-image/10 text-kind-image',
     title: 'Scans are first-class',
     body: 'Scanned PDFs and photographed pages are recognized on-device with no page cap, and low-confidence text is labeled rather than hidden.',
   },
 ];
 
 const STEPS = [
-  { title: 'Ingest', body: 'Files are parsed page by page. Anything without a text layer goes through local OCR.' },
-  { title: 'Summarize', body: 'Each document gets a summary on arrival, labeled with how it was produced.' },
-  { title: 'Ground', body: 'A model drafts only from retrieved passages. Unsupported claims are refused, not smoothed over.' },
-  { title: 'Verify', body: 'Open any citation to read the source page and judge it yourself.' },
+  {
+    title: 'Ingest',
+    tint: 'border-kind-code/25 bg-kind-code/10 text-kind-code',
+    body: 'Files are parsed page by page. Anything without a text layer goes through local OCR.',
+  },
+  {
+    title: 'Summarize',
+    tint: 'border-kind-image/25 bg-kind-image/10 text-kind-image',
+    body: 'Each document gets a summary on arrival, labeled with how it was produced.',
+  },
+  {
+    title: 'Ground',
+    tint: 'border-success/25 bg-success-muted text-success',
+    body: 'A model drafts only from retrieved passages. Unsupported claims are refused, not smoothed over.',
+  },
+  {
+    title: 'Verify',
+    tint: 'border-accent/25 bg-accent-muted text-accent',
+    body: 'Open any citation to read the source page and judge it yourself.',
+  },
 ];
 
 export default function LandingPage() {
@@ -114,7 +139,9 @@ export default function LandingPage() {
               const Icon = pillar.icon;
               return (
                 <article key={pillar.title} className="bg-card p-5">
-                  <Icon className="mb-4 size-[18px] text-muted-foreground" strokeWidth={1.6} aria-hidden />
+                  <span className={`kind-mark mb-4 size-9 ${pillar.tint}`}>
+                    <Icon className="size-4" strokeWidth={1.6} aria-hidden />
+                  </span>
                   <h3 className="text-sm font-semibold text-foreground">{pillar.title}</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{pillar.body}</p>
                 </article>
@@ -133,10 +160,12 @@ export default function LandingPage() {
           <ol className="mt-10 grid gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
             {STEPS.map((step, index) => (
               <li key={step.title} className="border-t border-border pt-4">
-                <span className="font-mono text-2xs tabular-nums text-muted-foreground">
+                <span
+                  className={`inline-flex h-5 items-center rounded-sm border px-1.5 font-mono text-2xs tabular-nums ${step.tint}`}
+                >
                   {String(index + 1).padStart(2, '0')}
                 </span>
-                <h3 className="mt-2 text-sm font-semibold text-foreground">{step.title}</h3>
+                <h3 className="mt-2.5 text-sm font-semibold text-foreground">{step.title}</h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
               </li>
             ))}

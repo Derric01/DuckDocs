@@ -10,13 +10,39 @@ interface Command {
   label: string;
   hint: string;
   icon: LucideIcon;
+  tint: string;
 }
 
+/** Each destination keeps one tint everywhere it can reasonably carry one. */
 const COMMANDS: Command[] = [
-  { id: 'intelligence', label: 'Ask your library', hint: 'Grounded question answering', icon: MessageSquareText },
-  { id: 'library', label: 'Open library', hint: 'Browse and add documents', icon: LibraryBig },
-  { id: 'review', label: 'Open review', hint: 'Documents needing attention', icon: Highlighter },
-  { id: 'settings', label: 'Open settings', hint: 'Providers, OCR, and privacy', icon: Settings2 },
+  {
+    id: 'intelligence',
+    label: 'Ask your library',
+    hint: 'Grounded question answering',
+    icon: MessageSquareText,
+    tint: 'text-accent',
+  },
+  {
+    id: 'library',
+    label: 'Open library',
+    hint: 'Browse and add documents',
+    icon: LibraryBig,
+    tint: 'text-kind-sheet',
+  },
+  {
+    id: 'review',
+    label: 'Open review',
+    hint: 'Documents needing attention',
+    icon: Highlighter,
+    tint: 'text-warning',
+  },
+  {
+    id: 'settings',
+    label: 'Open settings',
+    hint: 'Providers, OCR, and privacy',
+    icon: Settings2,
+    tint: 'text-kind-code',
+  },
 ];
 
 export function CommandPalette({
@@ -119,7 +145,7 @@ export function CommandPalette({
                   )}
                 >
                   <Icon
-                    className={cn('size-4 shrink-0', index === active ? 'text-accent' : 'text-muted-foreground')}
+                    className={cn('size-4 shrink-0', index === active ? command.tint : 'text-muted-foreground')}
                     aria-hidden
                   />
                   <span className="flex-1">{command.label}</span>

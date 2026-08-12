@@ -11,6 +11,7 @@
 
 import { ChevronDown, FileText, ScanText } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { kindFor } from '@/lib/document-kind';
 import { cn } from '@/lib/utils';
 import type { EvidenceRecord } from '@/lib/types';
 
@@ -125,7 +126,7 @@ function CitationCard({
         }}
         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors duration-fast hover:bg-muted/50"
       >
-        <span className="grid size-6 shrink-0 place-items-center rounded-sm border border-border bg-muted text-muted-foreground">
+        <span className={cn('kind-mark size-6', kindFor(group.documentName).mark)}>
           {isOcr ? <ScanText className="size-3" aria-hidden /> : <FileText className="size-3" aria-hidden />}
         </span>
         <span className="min-w-0 flex-1">
