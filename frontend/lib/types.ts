@@ -21,6 +21,10 @@ export interface DocumentRecord {
   /** 0-100 ingest progress; present only while status is 'processing'. */
   progress?: number;
   stage?: string;
+  /** Generated at ingest. `summaryMethod` says how, so the UI can label it. */
+  summary?: string | null;
+  summaryMethod?: 'extractive' | 'abstractive' | null;
+  summaryProvider?: string | null;
 }
 
 export interface EvidenceRecord {

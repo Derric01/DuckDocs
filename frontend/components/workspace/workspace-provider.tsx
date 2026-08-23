@@ -28,7 +28,10 @@ interface WorkspaceValue {
 
   messages: MessageRecord[];
   asking: boolean;
+  /** Tokens received so far for the in-flight answer; empty until the first arrives. */
+  draft: string;
   ask: (question: string) => Promise<void>;
+  stopAsking: () => void;
 
   providers: ProviderConfigRecord[];
   providersLoading: boolean;
@@ -70,6 +73,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [evidence, setEvidence] = useState<EvidenceRecord | null>(null);
   const [messages, setMessages] = useState<MessageRecord[]>([WELCOME]);
   const [asking, setAsking] = useState(false);
+  const [draft, setDraft] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
   const [providers, setProviders] = useState<ProviderConfigRecord[]>([]);
   const [providersLoading, setProvidersLoading] = useState(false);
 
@@ -183,6 +188,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [connection, notify],
   );
 
+  /**
+   * Answers stream, so the reader sees text forming instead of a spinner. The
+   * committed turn always comes from the terminal `done` payload — a partial
+   * token run has no citations, and an uncited answer must never enter the
+   * transcript.
+   */
   const ask = useCallback(
     async (question: string) => {
       const trimmed = question.trim();
@@ -193,8 +204,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         { id: `user_${Date.now()}`, role: 'user', timestamp: timestamp(), content: trimmed },
       ]);
       setAsking(true);
+      setDraft('');
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       try {
-        const answer = await duckDocsApi.ask(trimmed);
+        const answer = await duckDocsApi.askStream(trimmed, {
+          signal: controller.signal,
+          onToken: (token) => setDraft((current) => current + token),
+        });
         setConnection('ready');
         setMessages((current) => [
           ...current,
@@ -212,24 +230,46 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ]);
         if (answer.citations[0]) setEvidence(answer.citations[0]);
       } catch (error) {
-        const message = describeError(error);
-        setMessages((current) => [
-          ...current,
-          {
-            id: `assistant_${Date.now()}`,
-            role: 'assistant',
-            timestamp: timestamp(),
-            content: message,
-            state: 'error',
-          },
-        ]);
-        if (isOfflineError(error)) setConnection('offline');
+        if (controller.signal.aborted) {
+          setMessages((current) => [
+            ...current,
+            {
+              id: `assistant_${Date.now()}`,
+              role: 'assistant',
+              timestamp: timestamp(),
+              content: 'Stopped before the answer was grounded, so nothing was cited.',
+              state: 'error',
+            },
+          ]);
+        } else {
+          const message = describeError(error);
+          setMessages((current) => [
+            ...current,
+            {
+              id: `assistant_${Date.now()}`,
+              role: 'assistant',
+              timestamp: timestamp(),
+              content: message,
+              state: 'error',
+            },
+          ]);
+          if (isOfflineError(error)) setConnection('offline');
+        }
       } finally {
+        abortRef.current = null;
+        setDraft('');
         setAsking(false);
       }
     },
     [asking],
   );
+
+  const stopAsking = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  // A navigation mid-answer must not leave the request running.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const value = useMemo<WorkspaceValue>(
     () => ({
@@ -243,7 +283,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       inspectDocument,
       messages,
       asking,
+      draft,
       ask,
+      stopAsking,
       providers,
       providersLoading,
       refreshProviders,
@@ -259,7 +301,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       inspectDocument,
       messages,
       asking,
+      draft,
       ask,
+      stopAsking,
       providers,
       providersLoading,
       refreshProviders,

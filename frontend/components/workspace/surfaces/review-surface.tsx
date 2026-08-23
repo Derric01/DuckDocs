@@ -1,61 +1,44 @@
 'use client';
 
 import { AlertCircle, CheckCircle2, ChevronRight, ScanText } from 'lucide-react';
-import { Badge, EmptyState } from '@/components/ui';
+import { Badge, Card, EmptyState } from '@/components/ui';
+import { cn } from '@/lib/utils';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
 import type { DocumentRecord } from '@/lib/types';
 
 function reason(document: DocumentRecord): string {
-  if (document.status === 'failed') {
-    return 'Processing failed. Check the file, then add it again.';
-  }
+  if (document.status === 'failed') return 'Processing failed. Check the file, then add it again.';
   return 'No readable text was found, even after OCR. The file is stored but is not searchable.';
 }
 
 export function ReviewSurface() {
   const { documents, inspectDocument } = useWorkspace();
 
-  const attention = documents.filter(
-    (document) => document.status === 'review' || document.status === 'failed',
-  );
-  const ready = documents.filter((document) => document.status === 'ready');
-  const ocrCount = documents.filter((document) => document.fidelity === 'OCR dependent').length;
+  const attention = documents.filter((d) => d.status === 'review' || d.status === 'failed');
+  const ready = documents.filter((d) => d.status === 'ready');
+  const ocrCount = documents.filter((d) => d.fidelity === 'OCR dependent').length;
   const coverage = documents.length ? Math.round((ready.length / documents.length) * 100) : 0;
 
   return (
-    <div className="surface surface-narrow">
-      <header className="surface-head">
-        <div className="surface-head-row">
-          <div>
-            <h2>Review</h2>
-            <p>Documents that need attention before they can be cited, and how much of your library is searchable.</p>
-          </div>
-        </div>
+    <div className="mx-auto max-w-5xl px-8 pb-16 pt-8 max-sm:px-4 max-sm:pt-5">
+      <header className="mb-7 border-b border-border pb-5">
+        <h2 className="font-display text-3xl text-foreground">Review</h2>
+        <p className="mt-1.5 max-w-prose text-sm text-muted-foreground">
+          Documents that need attention before they can be cited, and how much of your library is searchable.
+        </p>
       </header>
 
-      <div className="stat-grid">
-        <div className="stat">
-          <p className="stat-label">Searchable</p>
-          <p className="stat-value">{coverage}%</p>
-        </div>
-        <div className="stat">
-          <p className="stat-label">Ready documents</p>
-          <p className="stat-value">{ready.length}</p>
-        </div>
-        <div className="stat">
-          <p className="stat-label">Needs attention</p>
-          <p className="stat-value">{attention.length}</p>
-        </div>
-        <div className="stat">
-          <p className="stat-label">OCR-derived</p>
-          <p className="stat-value">{ocrCount}</p>
-        </div>
+      <div className="mb-7 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border lg:grid-cols-4">
+        <Stat label="Searchable" value={`${coverage}%`} />
+        <Stat label="Ready documents" value={String(ready.length)} />
+        <Stat label="Needs attention" value={String(attention.length)} warn={attention.length > 0} />
+        <Stat label="OCR-derived" value={String(ocrCount)} />
       </div>
 
       {attention.length === 0 ? (
         <EmptyState
           icon={CheckCircle2}
-          title="Nothing needs review"
+          title="All clear"
           description={
             documents.length
               ? 'Every document in your library parsed cleanly and is searchable.'
@@ -63,28 +46,48 @@ export function ReviewSurface() {
           }
         />
       ) : (
-        <div className="review-list">
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
           {attention.map((document) => (
-            <button key={document.id} className="review-row" onClick={() => void inspectDocument(document)}>
-              <span className="doc-icon" aria-hidden="true">
+            <button
+              key={document.id}
+              onClick={() => void inspectDocument(document)}
+              className="table-row-hairline flex w-full items-center gap-3.5 px-3.5 py-3 text-left transition-colors duration-fast hover:bg-muted/40"
+            >
+              <span
+                className={cn(
+                  'kind-mark size-8',
+                  document.status === 'failed'
+                    ? 'border-destructive/25 bg-destructive-muted text-destructive'
+                    : 'border-warning/25 bg-warning-muted text-warning',
+                )}
+              >
                 {document.status === 'failed' ? (
-                  <AlertCircle size={15} strokeWidth={1.7} />
+                  <AlertCircle className="size-4" strokeWidth={1.7} aria-hidden />
                 ) : (
-                  <ScanText size={15} strokeWidth={1.7} />
+                  <ScanText className="size-4" strokeWidth={1.7} aria-hidden />
                 )}
               </span>
-              <span className="review-copy">
-                <strong>{document.name}</strong>
-                <p>{reason(document)}</p>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-foreground">{document.name}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">{reason(document)}</span>
               </span>
-              <Badge tone={document.status === 'failed' ? 'danger' : 'warning'}>
+              <Badge tone={document.status === 'failed' ? 'destructive' : 'warning'}>
                 {document.status === 'failed' ? 'Failed' : 'Needs review'}
               </Badge>
-              <ChevronRight size={15} strokeWidth={1.8} className="doc-chevron" aria-hidden="true" />
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
             </button>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+function Stat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <Card className="rounded-none border-0 p-4">
+      <p className="eyebrow">{label}</p>
+      <p className={cn('mt-1.5 font-display text-3xl', warn ? 'text-warning' : 'text-foreground')}>{value}</p>
+    </Card>
   );
 }

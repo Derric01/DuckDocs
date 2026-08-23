@@ -1,9 +1,11 @@
 'use client';
 
-import { AlertTriangle, ArrowUp, Copy, FileText, LockKeyhole, Paperclip } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { EmptyState, useToast } from '@/components/ui';
+import { AlertTriangle, ArrowUp, Copy, FileText, LockKeyhole, Paperclip, Square } from 'lucide-react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { Button, EmptyState, useToast } from '@/components/ui';
+import { CitationList } from '@/components/workspace/citations';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
+import { cn } from '@/lib/utils';
 import type { EvidenceRecord, MessageRecord } from '@/lib/types';
 
 const ACCEPT =
@@ -15,8 +17,14 @@ const SUGGESTIONS = [
   'List the open obligations',
 ];
 
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 export function AskSurface() {
-  const { messages, asking, ask, documents, uploadDocuments, selectEvidence, connection } = useWorkspace();
+  const { messages, asking, draft, ask, stopAsking, documents, uploadDocuments, selectEvidence, evidence, connection } =
+    useWorkspace();
   const { notify } = useToast();
 
   const [question, setQuestion] = useState('');
@@ -26,24 +34,34 @@ export function AskSurface() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Follow the conversation as turns arrive.
+  const handleCopy = useCallback(() => notify('Copied to clipboard'), [notify]);
+
+  /**
+   * Follow the conversation as turns arrive — but only when the reader is
+   * already near the bottom. Yanking the view down while they read an earlier
+   * answer is the most disruptive thing a chat surface can do.
+   */
   useEffect(() => {
     const node = scrollRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
-  }, [messages.length, asking]);
+    if (!node) return;
+    if (node.scrollHeight - node.scrollTop - node.clientHeight > 240) return;
+    node.scrollTo({ top: node.scrollHeight, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+  }, [messages.length, asking, draft]);
 
-  // Grow the composer with its content, up to the CSS max-height.
+  // Grow the composer with its content, up to a capped height.
   useEffect(() => {
     const node = textareaRef.current;
     if (!node) return;
     node.style.height = 'auto';
-    node.style.height = `${node.scrollHeight}px`;
+    node.style.height = `${Math.min(node.scrollHeight, 200)}px`;
   }, [question]);
 
   const submit = () => {
     const trimmed = question.trim();
     if (!trimmed || asking) return;
     setQuestion('');
+    // Keep the caret in the composer so a follow-up needs no click.
+    textareaRef.current?.focus();
     void ask(trimmed);
   };
 
@@ -61,51 +79,68 @@ export function AskSurface() {
   const empty = messages.length <= 1 && documents.length === 0;
 
   return (
-    <div className="chat">
-      <div className="chat-scroll" ref={scrollRef}>
-        <div className="chat-thread">
+    <div className="flex h-full flex-col">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-6 pt-8 max-sm:px-4">
+        <div className="mx-auto max-w-3xl">
           {empty ? (
             <EmptyState
               icon={FileText}
               title="Your library is empty"
               description="Add documents to build a local evidence index. Scanned pages and images are recognized with on-device OCR."
               action={
-                <button className="btn btn-primary" onClick={() => fileRef.current?.click()}>
-                  <Paperclip size={15} strokeWidth={1.8} aria-hidden="true" />
+                <Button variant="primary" size="lg" onClick={() => fileRef.current?.click()}>
+                  <Paperclip className="size-4" aria-hidden />
                   Add documents
-                </button>
+                </Button>
               }
             />
           ) : (
             messages.map((message) => (
-              <Turn key={message.id} message={message} onCitation={selectEvidence} onCopy={() => notify('Copied')} />
+              <Turn
+                key={message.id}
+                message={message}
+                activeEvidenceId={evidence?.id ?? null}
+                onCitation={selectEvidence}
+                onCopy={handleCopy}
+              />
             ))
           )}
 
           {asking ? (
-            <div className="turn">
-              <div className="turn-meta">
-                <span className="turn-name">DuckDocs</span>
-              </div>
-              <p className="thinking">
-                <span className="thinking-dots" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                Retrieving evidence
-              </p>
+            <div className="mb-8 animate-slide-up" aria-live="polite" aria-busy="true">
+              <p className="eyebrow mb-2.5">DuckDocs</p>
+              {draft ? (
+                // Streamed text is provisional: citations only exist once the
+                // terminal event lands, so this deliberately renders without them.
+                <p className="max-w-[72ch] text-md leading-[1.65] text-foreground">
+                  {draft}
+                  <i className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-accent align-baseline" />
+                </p>
+              ) : (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="flex gap-1" aria-hidden>
+                    <i className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                    <i className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                    <i className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:300ms]" />
+                  </span>
+                  Retrieving evidence
+                </p>
+              )}
             </div>
           ) : null}
         </div>
       </div>
 
-      <div className="composer-dock">
-        <div className="composer-inner">
+      <div className="shrink-0 px-6 pb-6 max-sm:px-4">
+        <div className="mx-auto max-w-3xl">
           {!empty && messages.length <= 1 ? (
-            <div className="suggestions">
+            <div className="mb-3 flex flex-wrap gap-2">
               {SUGGESTIONS.map((item) => (
-                <button key={item} onClick={() => setQuestion(item)}>
+                <button
+                  key={item}
+                  onClick={() => setQuestion(item)}
+                  className="h-7 rounded border border-border bg-card px-2.5 text-xs text-muted-foreground transition-colors duration-fast hover:border-border-strong hover:text-foreground"
+                >
                   {item}
                 </button>
               ))}
@@ -113,7 +148,6 @@ export function AskSurface() {
           ) : null}
 
           <form
-            className={`composer ${dragging ? 'dragging' : ''}`}
             onSubmit={(event) => {
               event.preventDefault();
               submit();
@@ -132,6 +166,12 @@ export function AskSurface() {
               setDragging(false);
               void addFiles(event.dataTransfer.files);
             }}
+            className={cn(
+              'rounded-lg border bg-card transition-colors duration-fast',
+              dragging
+                ? 'border-accent bg-accent-muted'
+                : 'border-input focus-within:border-ring focus-within:ring-1 focus-within:ring-ring',
+            )}
           >
             <textarea
               ref={textareaRef}
@@ -146,35 +186,57 @@ export function AskSurface() {
                   submit();
                 }
               }}
+              // The card carries the focus ring; a second one around just the
+              // textarea reads as a misaligned box inside the control.
+              className="block w-full resize-none bg-transparent px-3.5 pb-1.5 pt-3 text-md leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/80 focus-visible:ring-0 focus-visible:ring-offset-0"
             />
-            <div className="composer-bar">
-              <div className="composer-left">
-                <button
+            <div className="flex items-center justify-between gap-3 p-1.5 pl-2.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading || connection === 'offline'}
+              >
+                <Paperclip className="size-3.5" aria-hidden />
+                {uploading ? 'Adding…' : 'Attach'}
+              </Button>
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                accept={ACCEPT}
+                className="sr-only"
+                onChange={(event) => void addFiles(event.target.files)}
+              />
+              {asking ? (
+                <Button
                   type="button"
-                  className="composer-scope"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={uploading || connection === 'offline'}
+                  variant="secondary"
+                  size="sm"
+                  className="size-8 rounded-md p-0"
+                  onClick={stopAsking}
+                  aria-label="Stop generating"
                 >
-                  <Paperclip size={14} strokeWidth={1.8} aria-hidden="true" />
-                  {uploading ? 'Adding…' : 'Attach'}
-                </button>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  multiple
-                  accept={ACCEPT}
-                  className="visually-hidden"
-                  onChange={(event) => void addFiles(event.target.files)}
-                />
-              </div>
-              <button className="send-btn" type="submit" disabled={!question.trim() || asking} aria-label="Send">
-                <ArrowUp size={16} strokeWidth={2} aria-hidden="true" />
-              </button>
+                  <Square className="size-3" fill="currentColor" strokeWidth={0} />
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  className="size-8 rounded-md p-0"
+                  disabled={!question.trim()}
+                  aria-label="Send"
+                >
+                  <ArrowUp className="size-4" strokeWidth={2.4} />
+                </Button>
+              )}
             </div>
           </form>
 
-          <p className="composer-note">
-            <LockKeyhole size={11} strokeWidth={1.8} aria-hidden="true" />
+          <p className="mt-2.5 flex items-center justify-center gap-1.5 text-2xs text-muted-foreground">
+            <LockKeyhole className="size-3" aria-hidden />
             {connection === 'ready'
               ? 'Answers cite retrieved passages only. Nothing leaves this machine.'
               : 'Local API offline — start the backend to ask questions.'}
@@ -185,19 +247,24 @@ export function AskSurface() {
   );
 }
 
-function Turn({
+/** Memoized: a long thread would otherwise re-render on every keystroke. */
+const Turn = memo(function Turn({
   message,
+  activeEvidenceId,
   onCitation,
   onCopy,
 }: {
   message: MessageRecord;
+  activeEvidenceId: string | null;
   onCitation: (evidence: EvidenceRecord) => void;
   onCopy: () => void;
 }) {
   if (message.role === 'user') {
     return (
-      <article className="turn turn-user">
-        <div className="bubble">{message.content}</div>
+      // The question is set as a quotation rather than a coloured bubble: it
+      // is the reader's own words, and a filled pill competes with the answer.
+      <article className="mb-7 animate-slide-up border-l-2 border-foreground pl-4">
+        <p className="text-md leading-relaxed text-foreground">{message.content}</p>
       </article>
     );
   }
@@ -206,59 +273,51 @@ function Turn({
   const errored = message.state === 'error';
 
   return (
-    <article className="turn">
-      <div className="turn-meta">
-        <span className="turn-name">DuckDocs</span>
-        {message.timestamp ? <span className="turn-time">{message.timestamp}</span> : null}
+    <article className="group mb-9 animate-slide-up">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="eyebrow">DuckDocs</span>
+        {message.timestamp ? (
+          <span className="font-mono text-2xs tabular-nums text-muted-foreground">{message.timestamp}</span>
+        ) : null}
       </div>
 
       {refused || errored ? (
-        <div className="refusal">
-          <AlertTriangle size={15} strokeWidth={1.8} aria-hidden="true" />
+        <div className="flex gap-3 rounded-lg border border-warning/25 bg-warning-muted p-3.5">
+          <AlertTriangle className="mt-px size-4 shrink-0 text-warning" aria-hidden />
           <div>
-            <strong>{errored ? 'Could not reach the API' : 'Not enough evidence'}</strong>
-            <p>{message.content}</p>
+            <p className="text-sm font-semibold text-foreground">
+              {errored ? 'Could not reach the API' : 'Not enough evidence'}
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-foreground/75">{message.content}</p>
           </div>
         </div>
       ) : (
-        <div className="answer">
-          <p>{message.content}</p>
-        </div>
+        <div className="max-w-[72ch] text-md leading-[1.65] text-foreground">{message.content}</div>
       )}
 
       {message.citations && message.citations.length > 0 ? (
-        <div className="citation-list">
-          {message.citations.map((citation, index) => (
-            <button
-              key={citation.id}
-              className="citation-source"
-              onClick={() => onCitation(citation)}
-              aria-label={`Open citation ${index + 1} from ${citation.documentName}, page ${citation.page}`}
-            >
-              <span className="ord" aria-hidden="true">
-                {index + 1}
-              </span>
-              <span className="name">{citation.documentName}</span>
-              <span className="mono">p{citation.page}</span>
-            </button>
-          ))}
-        </div>
+        <CitationList citations={message.citations} activeId={activeEvidenceId} onSelect={onCitation} />
       ) : null}
 
       {!errored ? (
-        <div className="turn-tools">
-          <button
+        <div className="mt-3 flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 gap-1.5 px-1.5 text-2xs"
             onClick={() => {
               void navigator.clipboard?.writeText(message.content);
               onCopy();
             }}
           >
-            <Copy size={13} strokeWidth={1.8} aria-hidden="true" />
+            <Copy className="size-3" aria-hidden />
             Copy
-          </button>
-          {message.provider ? <span className="turn-time mono">{message.provider}</span> : null}
+          </Button>
+          {message.provider ? (
+            <span className="font-mono text-2xs text-muted-foreground">{message.provider}</span>
+          ) : null}
         </div>
       ) : null}
     </article>
   );
-}
+});
