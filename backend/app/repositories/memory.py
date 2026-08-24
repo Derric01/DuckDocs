@@ -117,6 +117,11 @@ class DocumentRepository:
         self._persist()
         return len(chunks)
 
+    def add_job(self, job: IngestJob) -> None:
+        """Record a new job for an existing document (retry path)."""
+        self.jobs[job.id] = job
+        self._persist()
+
     def get_job(self, job_id: str) -> IngestJob | None:
         return self.jobs.get(job_id)
 

@@ -28,6 +28,7 @@ class Settings:
     db_url: str | None = None
     chroma_url: str | None = None
     api_token: str | None = None
+    summarize_with_model: bool = True
     ocr_engine: str = "auto"
     ocr_languages: str = "eng"
     ocr_model_dir: str | None = None
@@ -58,6 +59,7 @@ class Settings:
             db_url=db_url,
             chroma_url=chroma_url,
             api_token=os.getenv("DUCKDOCS_API_TOKEN") or None,
+            summarize_with_model=os.getenv("DUCKDOCS_SUMMARIZE_WITH_MODEL", "1") not in {"0", "false", "False"},
             ocr_engine=os.getenv("DUCKDOCS_OCR_ENGINE", "auto"),
             ocr_languages=os.getenv("DUCKDOCS_OCR_LANGUAGES", "eng"),
             ocr_model_dir=os.getenv("DUCKDOCS_OCR_MODEL_DIR") or None,

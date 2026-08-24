@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
@@ -9,7 +10,10 @@ from typing import Any
 
 from app.domain.models import Document, Evidence, IngestJob, utc_now
 from app.repositories.memory import DocumentRepository
+from app.repositories.migrations import upgrade_database
 from app.services.chunking import ChunkCandidate
+
+logger = logging.getLogger(__name__)
 
 try:
     from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Text, create_engine, select
@@ -41,6 +45,9 @@ if _SQLALCHEMY_AVAILABLE:
         created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
         updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
         tags: Mapped[list[Any]] = mapped_column(JSON, default=list)
+        summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+        summary_method: Mapped[str | None] = mapped_column(String(16), nullable=True)
+        summary_provider: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     class JobRow(Base):
         __tablename__ = "ingest_jobs"
@@ -93,11 +100,30 @@ class SqlDocumentRepository:
             raise RuntimeError("sqlalchemy is not installed; install backend extras to enable DUCKDOCS_DB_URL")
         self.engine = create_engine(db_url, pool_pre_ping=True)
         self.SessionLocal = sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
-        Base.metadata.create_all(self.engine)
+        self._prepare_schema(db_url)
         self.documents: dict[str, Document] = {}
         self.jobs: dict[str, IngestJob] = {}
         self.evidence: dict[str, Evidence] = {}
         self._hydrate()
+
+    def _prepare_schema(self, db_url: str) -> None:
+        """Migrate to head, falling back to create_all only for a fresh database.
+
+        A migration failure on an *empty* database is not worth refusing to
+        start over -- the ORM metadata describes the same schema. A failure on a
+        populated one is different: continuing would run new code against an old
+        shape, so it propagates.
+        """
+        from sqlalchemy import inspect
+
+        try:
+            upgrade_database(self.engine, db_url)
+            return
+        except Exception:
+            if inspect(self.engine).get_table_names():
+                raise
+            logger.warning("Alembic unavailable; creating the schema directly", exc_info=True)
+        Base.metadata.create_all(self.engine)
 
     def _hydrate(self) -> None:
         with self.SessionLocal() as session:
@@ -162,6 +188,13 @@ class SqlDocumentRepository:
         ]:
             del self.evidence[evidence_id]
         return len(chunks)
+
+    def add_job(self, job: IngestJob) -> None:
+        """Record a new job for an existing document (retry path)."""
+        with self.SessionLocal() as session:
+            session.merge(self._from_job(job))
+            session.commit()
+        self.jobs[job.id] = job
 
     def get_job(self, job_id: str) -> IngestJob | None:
         self._hydrate()
@@ -230,6 +263,9 @@ class SqlDocumentRepository:
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
                 "tags": row.tags or [],
+                "summary": row.summary,
+                "summary_method": row.summary_method,
+                "summary_provider": row.summary_provider,
             }
         )
 

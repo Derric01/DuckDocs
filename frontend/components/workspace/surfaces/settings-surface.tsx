@@ -1,20 +1,24 @@
 'use client';
 
 import { Cpu, LockKeyhole, Monitor, Moon, Plus, ShieldCheck, Sparkles, Sun } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   Badge,
   Button,
   Dialog,
+  DialogContent,
   EmptyState,
   Field,
   Input,
-  Segmented,
   Switch,
+  Tabs,
+  TabsList,
+  TabsTrigger,
   useToast,
 } from '@/components/ui';
 import { useWorkspace } from '@/components/workspace/workspace-provider';
 import { duckDocsApi, type ProviderConfigRecord } from '@/lib/api/client';
+import { cn } from '@/lib/utils';
 import { applyDensity, applyTheme, readDensity, readTheme, type Density, type ThemeChoice } from '@/lib/theme';
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -44,16 +48,6 @@ export function SettingsSurface() {
   useEffect(() => {
     if (connection !== 'offline') void refreshProviders();
   }, [connection, refreshProviders]);
-
-  const chooseTheme = (next: ThemeChoice) => {
-    setTheme(next);
-    applyTheme(next);
-  };
-
-  const chooseDensity = (next: Density) => {
-    setDensity(next);
-    applyDensity(next);
-  };
 
   const configureOllama = async () => {
     if (connection === 'offline') {
@@ -101,37 +95,33 @@ export function SettingsSurface() {
   };
 
   return (
-    <div className="surface surface-narrow">
-      <header className="surface-head">
-        <div className="surface-head-row">
-          <div>
-            <h2>Settings</h2>
-            <p>Control which models run, how the workspace looks, and what is allowed to leave this machine.</p>
-          </div>
-        </div>
+    <div className="mx-auto max-w-3xl px-8 pb-16 pt-8 max-sm:px-4 max-sm:pt-5">
+      <header className="mb-8 border-b border-border pb-5">
+        <h2 className="font-display text-3xl text-foreground">Settings</h2>
+        <p className="mt-1.5 max-w-prose text-sm text-muted-foreground">
+          Control which models run, how the workspace looks, and what is allowed to leave this machine.
+        </p>
       </header>
 
-      <div className="settings-stack">
-        <section className="settings-section">
-          <header>
-            <h3>Models</h3>
-            <p>
-              DuckDocs answers from your local evidence index. A model only drafts the wording — remote providers
-              are opt-in and never enabled by default.
-            </p>
-          </header>
-
-          <div className="head-actions" style={{ marginBottom: 'var(--space-4)' }}>
-            <Button icon={Plus} onClick={() => void configureOllama()}>
+      <div className="space-y-10">
+        <Section
+          icon={Sparkles}
+          title="Models"
+          description="DuckDocs answers from your local evidence index. A model only drafts the wording — remote providers are opt-in and never enabled by default."
+        >
+          <div className="mb-4 flex flex-wrap gap-2">
+            <Button onClick={() => void configureOllama()}>
+              <Plus className="size-3.5" aria-hidden />
               Configure Ollama
             </Button>
-            <Button icon={Plus} onClick={() => setRemoteOpen(true)}>
+            <Button onClick={() => setRemoteOpen(true)}>
+              <Plus className="size-3.5" aria-hidden />
               Add remote provider
             </Button>
           </div>
 
           {providersLoading ? (
-            <p className="inline-state">Loading providers…</p>
+            <p className="py-3 text-sm text-muted-foreground">Loading providers…</p>
           ) : providers.length === 0 ? (
             <EmptyState
               icon={Sparkles}
@@ -139,104 +129,145 @@ export function SettingsSurface() {
               description="DuckDocs falls back to built-in extractive answers and keyword retrieval, which need no model at all."
             />
           ) : (
-            providers.map((provider) => (
-              <ProviderRow
-                key={provider.id}
-                provider={provider}
-                testing={testing === provider.id}
-                onTest={() => void testProvider(provider.id)}
-              />
-            ))
+            <div className="overflow-hidden rounded-lg border border-border bg-card">
+              {providers.map((provider) => (
+                <ProviderRow
+                  key={provider.id}
+                  provider={provider}
+                  testing={testing === provider.id}
+                  onTest={() => void testProvider(provider.id)}
+                />
+              ))}
+            </div>
           )}
-        </section>
+        </Section>
 
-        <section className="settings-section">
-          <header>
-            <h3>Appearance</h3>
-            <p>Dark is designed for long review sessions; comfortable density increases row height.</p>
-          </header>
-
-          <div className="setting-row">
-            <div className="setting-copy">
-              <strong>Theme</strong>
-              <p>Follow the system setting, or pin one.</p>
+        <Section icon={Moon} title="Appearance" description="Dark is designed for long review sessions.">
+          <div className="overflow-hidden rounded-lg border border-border bg-card">
+            <div className="table-row-hairline flex min-h-[56px] items-center justify-between gap-4 px-4">
+              <div>
+                <p className="text-sm font-medium text-foreground">Theme</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Follow the system setting, or pin one.</p>
+              </div>
+              <Tabs
+                value={theme}
+                onValueChange={(value) => {
+                  setTheme(value as ThemeChoice);
+                  applyTheme(value as ThemeChoice);
+                }}
+              >
+                <TabsList>
+                  <TabsTrigger value="light">
+                    <Sun className="size-3.5" aria-hidden />
+                    Light
+                  </TabsTrigger>
+                  <TabsTrigger value="dark">
+                    <Moon className="size-3.5" aria-hidden />
+                    Dark
+                  </TabsTrigger>
+                  <TabsTrigger value="system">
+                    <Monitor className="size-3.5" aria-hidden />
+                    Auto
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
             </div>
-            <Segmented
-              label="Theme"
-              value={theme}
-              onChange={chooseTheme}
-              options={[
-                { value: 'light', label: 'Light', icon: Sun },
-                { value: 'dark', label: 'Dark', icon: Moon },
-                { value: 'system', label: 'System', icon: Monitor },
-              ]}
-            />
-          </div>
 
-          <div className="setting-row">
-            <div className="setting-copy">
-              <strong>Comfortable density</strong>
-              <p>Taller rows and more spacing in dense tables.</p>
-            </div>
-            <Switch
-              label="Comfortable density"
-              checked={density === 'comfortable'}
-              onChange={(next) => chooseDensity(next ? 'comfortable' : 'dense')}
-            />
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <header>
-            <h3>Processing</h3>
-            <p>How documents are turned into searchable, citable evidence.</p>
-          </header>
-
-          <div className="callout">
-            <Cpu size={18} strokeWidth={1.7} aria-hidden="true" />
-            <div>
-              <h3>On-device OCR</h3>
-              <p>
-                Scanned PDFs and images are recognized locally with PaddleOCR, falling back to Tesseract when its
-                model weights are unavailable. Every page is processed — there is no page cap or quota — and each
-                passage keeps its confidence score so low-quality recognition is labeled rather than hidden.
-                Configure the engine and languages with <code className="mono">DUCKDOCS_OCR_ENGINE</code> and{' '}
-                <code className="mono">DUCKDOCS_OCR_LANGUAGES</code>.
-              </p>
+            <div className="table-row-hairline flex min-h-[56px] items-center justify-between gap-4 px-4">
+              <div>
+                <p className="text-sm font-medium text-foreground">Comfortable density</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Taller rows and more spacing.</p>
+              </div>
+              <Switch
+                aria-label="Comfortable density"
+                checked={density === 'comfortable'}
+                onCheckedChange={(checked) => {
+                  const next: Density = checked ? 'comfortable' : 'dense';
+                  setDensity(next);
+                  applyDensity(next);
+                }}
+              />
             </div>
           </div>
-        </section>
+        </Section>
 
-        <section className="settings-section">
-          <header>
-            <h3>Privacy</h3>
-            <p>What runs locally, and what would leave this machine.</p>
-          </header>
+        <Section icon={Cpu} title="Processing" description="How documents become searchable, citable evidence.">
+          <Callout icon={Cpu} title="On-device OCR">
+            Scanned PDFs and images are recognized locally with RapidOCR, falling back to Tesseract when its
+            bundled models are unavailable. Every page is processed — there is no page cap or quota — and each
+            passage keeps its confidence score so low-quality recognition is labeled rather than hidden. Configure
+            with <code className="rounded-sm border border-border bg-muted px-1 py-0.5 font-mono text-2xs">DUCKDOCS_OCR_ENGINE</code>{' '}
+            and{' '}
+            <code className="rounded-sm border border-border bg-muted px-1 py-0.5 font-mono text-2xs">DUCKDOCS_OCR_LANGUAGES</code>.
+          </Callout>
+        </Section>
 
-          <div className="callout">
-            <LockKeyhole size={18} strokeWidth={1.7} aria-hidden="true" />
-            <div>
-              <h3>Your data boundary</h3>
-              <p>
-                Files, the evidence index, and OCR all stay on this machine. There is no analytics, telemetry, or
-                crash reporting. A remote provider only receives text if you configure one, and it is labeled
-                wherever it is used.
-              </p>
-            </div>
-          </div>
-        </section>
+        <Section icon={LockKeyhole} title="Privacy" description="What runs locally, and what would leave this machine.">
+          <Callout icon={LockKeyhole} title="Your data boundary">
+            Files, the evidence index, and OCR all stay on this machine. There is no analytics, telemetry, or crash
+            reporting. A remote provider only receives text if you configure one, and it is labeled wherever it is
+            used.
+          </Callout>
+        </Section>
       </div>
 
-      <RemoteProviderDialog
-        open={remoteOpen}
-        onClose={() => setRemoteOpen(false)}
-        onSaved={async () => {
-          setRemoteOpen(false);
-          await refreshProviders();
-          notify('Remote provider saved locally.', 'success');
-        }}
-        onError={(message) => notify(message, 'error')}
-      />
+      <Dialog open={remoteOpen} onOpenChange={setRemoteOpen}>
+        <RemoteProviderDialog
+          onSaved={async () => {
+            setRemoteOpen(false);
+            await refreshProviders();
+            notify('Remote provider saved locally.', 'success');
+          }}
+          onError={(message) => notify(message, 'error')}
+        />
+      </Dialog>
+    </div>
+  );
+}
+
+function Section({
+  icon: Icon,
+  title,
+  description,
+  children,
+}: {
+  icon: typeof Cpu;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <header className="mb-3">
+        <h3 className="flex items-center gap-2 text-base font-semibold text-foreground">
+          <Icon className="size-4 text-muted-foreground" strokeWidth={1.8} aria-hidden />
+          {title}
+        </h3>
+        <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function Callout({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: typeof Cpu;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex gap-3.5 rounded-lg border border-border bg-card p-4">
+      <span className="grid size-8 shrink-0 place-items-center rounded-sm border border-border bg-muted text-muted-foreground">
+        <Icon className="size-4" strokeWidth={1.7} aria-hidden />
+      </span>
+      <div>
+        <h4 className="text-sm font-semibold text-foreground">{title}</h4>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{children}</p>
+      </div>
     </div>
   );
 }
@@ -252,17 +283,26 @@ function ProviderRow({
 }) {
   const label = PROVIDER_LABEL[provider.providerType] ?? provider.providerType;
   return (
-    <div className="provider-row">
-      <span className="provider-avatar" aria-hidden="true">
+    <div className="table-row-hairline flex min-h-[64px] items-center gap-3 px-4 py-2.5">
+      {/* Tinted the same way the Local/Remote badge beside it reads: this is
+          the one place local-vs-remote is worth a colour, not decoration. */}
+      <span
+        className={cn(
+          'grid size-8 shrink-0 place-items-center rounded-sm border text-xs font-semibold',
+          provider.local
+            ? 'border-success/25 bg-success-muted text-success'
+            : 'border-accent/25 bg-accent-muted text-accent',
+        )}
+      >
         {label.slice(0, 1)}
       </span>
-      <div className="provider-copy">
-        <div className="provider-title-row">
-          <strong>{label}</strong>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-sm font-medium text-foreground">{label}</span>
           {provider.isDefault ? <Badge tone="accent">Default</Badge> : null}
           <Badge tone={provider.local ? 'neutral' : 'warning'}>{provider.local ? 'Local' : 'Remote'}</Badge>
         </div>
-        <p>
+        <p className="mt-0.5 truncate font-mono text-2xs text-muted-foreground">
           {provider.modelName || 'No model set'}
           {provider.baseUrl ? ` · ${provider.baseUrl}` : ''}
         </p>
@@ -278,20 +318,20 @@ function ProviderRow({
 }
 
 /**
- * Replaces the previous window.prompt() chain, which could not be styled,
- * validated, or cancelled cleanly, and showed the API key in a native dialog.
+ * Replaces the earlier window.prompt() chain, which could not be styled or
+ * validated and showed the API key in a native dialog.
  */
 function RemoteProviderDialog({
-  open,
-  onClose,
   onSaved,
   onError,
 }: {
-  open: boolean;
-  onClose: () => void;
   onSaved: () => Promise<void>;
   onError: (message: string) => void;
 }) {
+  const modelId = useId();
+  const urlId = useId();
+  const keyId = useId();
+
   const [modelName, setModelName] = useState('gpt-4.1-mini');
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -322,48 +362,43 @@ function RemoteProviderDialog({
   };
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
+    <DialogContent
       title="Add a remote provider"
       description="Text you ask about will be sent to this provider. It stays opt-in and is labeled wherever it is used."
       footer={
-        <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" loading={saving} onClick={() => void save()}>
-            Save provider
-          </Button>
-        </>
+        <Button variant="primary" loading={saving} onClick={() => void save()}>
+          Save provider
+        </Button>
       }
     >
-      <Field label="Model name" hint="For example gpt-4.1-mini.">
-        {(id) => <Input id={id} value={modelName} onChange={(event) => setModelName(event.target.value)} />}
+      <Field label="Model name" hint="For example gpt-4.1-mini." htmlFor={modelId}>
+        <Input id={modelId} value={modelName} onChange={(event) => setModelName(event.target.value)} />
       </Field>
-      <Field label="Base URL" hint="Leave blank for OpenAI. Set it for any OpenAI-compatible endpoint.">
-        {(id) => (
-          <Input
-            id={id}
-            value={baseUrl}
-            placeholder="https://…"
-            onChange={(event) => setBaseUrl(event.target.value)}
-          />
-        )}
+      <Field
+        label="Base URL"
+        hint="Leave blank for OpenAI. Set it for any OpenAI-compatible endpoint."
+        htmlFor={urlId}
+      >
+        <Input
+          id={urlId}
+          value={baseUrl}
+          placeholder="https://…"
+          onChange={(event) => setBaseUrl(event.target.value)}
+        />
       </Field>
-      <Field label="API key" hint="Stored on this machine and never written to logs.">
-        {(id) => (
-          <Input
-            id={id}
-            type="password"
-            value={apiKey}
-            autoComplete="off"
-            onChange={(event) => setApiKey(event.target.value)}
-          />
-        )}
+      <Field label="API key" hint="Stored on this machine and never written to logs." htmlFor={keyId}>
+        <Input
+          id={keyId}
+          type="password"
+          value={apiKey}
+          autoComplete="off"
+          onChange={(event) => setApiKey(event.target.value)}
+        />
       </Field>
-      <p className="field-hint">
-        <ShieldCheck size={12} strokeWidth={1.8} style={{ display: 'inline', verticalAlign: -2 }} aria-hidden="true" />{' '}
+      <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+        <ShieldCheck className="mt-px size-3.5 shrink-0" aria-hidden />
         Local providers remain the default until you explicitly change it.
       </p>
-    </Dialog>
+    </DialogContent>
   );
 }

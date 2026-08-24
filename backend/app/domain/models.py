@@ -57,13 +57,20 @@ class Document(BaseModel):
     created_at: datetime
     updated_at: datetime
     tags: list[str] = Field(default_factory=list)
+    # Generated at ingest. `summary_method` records how it was produced so the
+    # UI can distinguish verbatim sentences from model-written prose.
+    summary: str | None = None
+    summary_method: Literal["extractive", "abstractive"] | None = None
+    summary_provider: str | None = None
 
 
 class IngestJob(BaseModel):
     id: str
     document_id: str
     status: JobState
-    stage: Literal["queued", "parsing", "ocr", "chunking", "embedding", "indexing", "ready", "failed"]
+    stage: Literal[
+        "queued", "parsing", "ocr", "chunking", "summarizing", "embedding", "indexing", "ready", "failed"
+    ]
     progress_pct: int = Field(ge=0, le=100)
     error: dict[str, str] | None = None
     created_at: datetime

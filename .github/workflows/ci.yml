@@ -27,7 +27,7 @@ jobs:
 
       - name: Ruff
         working-directory: backend
-        run: python -m ruff check app tests
+        run: python -m ruff check app tests migrations
 
       - name: Mypy
         working-directory: backend
@@ -38,7 +38,7 @@ jobs:
         run: python -m pytest -q
 
   frontend:
-    name: Frontend (typecheck, build)
+    name: Frontend (typecheck, test, build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,6 +56,10 @@ jobs:
       - name: Typecheck
         working-directory: frontend
         run: npm run typecheck
+
+      - name: Test
+        working-directory: frontend
+        run: npm test
 
       - name: Build
         working-directory: frontend

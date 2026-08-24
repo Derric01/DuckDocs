@@ -17,7 +17,7 @@ import pytest
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.config import Settings
-from app.services.ocr import TesseractOcrEngine, build_engine, reset_engine_cache
+from app.services.ocr import RapidOcrEngine, TesseractOcrEngine, build_engine, reset_engine_cache
 from app.services.ocr.base import BoundingBox, OcrLine, OcrResult, aggregate_confidence
 from app.services.ocr.paddle import PaddleOcrEngine, _quad_to_bbox, normalize_language
 from app.services.ocr.registry import NullOcrEngine
@@ -240,25 +240,32 @@ def test_explicit_tesseract_preference_selects_tesseract() -> None:
     assert engine.name in {"tesseract", "unavailable"}
 
 
-def test_auto_falls_back_when_paddle_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_auto_falls_back_when_rapidocr_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     reset_engine_cache()
-    monkeypatch.setattr(PaddleOcrEngine, "available", lambda self: False)
+    monkeypatch.setattr(RapidOcrEngine, "available", lambda self: False)
     engine = build_engine(Settings(ocr_engine="auto"))
     assert engine.name in {"tesseract", "unavailable"}
     reset_engine_cache()
 
 
-def test_auto_prefers_paddle_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_auto_prefers_rapidocr_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    reset_engine_cache()
+    monkeypatch.setattr(RapidOcrEngine, "available", lambda self: True)
+    engine = build_engine(Settings(ocr_engine="auto"))
+    assert engine.name == "rapidocr"
+    reset_engine_cache()
+
+
+def test_explicit_paddle_preference_is_still_selectable(monkeypatch: pytest.MonkeyPatch) -> None:
     reset_engine_cache()
     monkeypatch.setattr(PaddleOcrEngine, "available", lambda self: True)
-    engine = build_engine(Settings(ocr_engine="auto"))
-    assert engine.name == "paddleocr"
+    assert build_engine(Settings(ocr_engine="paddleocr")).name == "paddleocr"
     reset_engine_cache()
 
 
 def test_engine_is_cached_per_preference(monkeypatch: pytest.MonkeyPatch) -> None:
     reset_engine_cache()
-    monkeypatch.setattr(PaddleOcrEngine, "available", lambda self: True)
+    monkeypatch.setattr(RapidOcrEngine, "available", lambda self: True)
     settings = Settings(ocr_engine="auto")
     assert build_engine(settings) is build_engine(settings), "loaded models must not be rebuilt per document"
     reset_engine_cache()

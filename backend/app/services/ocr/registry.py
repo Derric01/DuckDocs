@@ -1,15 +1,14 @@
 """Engine selection.
 
 `DUCKDOCS_OCR_ENGINE` picks the backend:
-  auto (default) -- PaddleOCR when it can load, otherwise Tesseract
-  paddleocr      -- PaddleOCR only
+  auto (default) -- RapidOCR, then Tesseract
+  rapidocr       -- RapidOCR only (PP-OCR models via ONNX, weights bundled)
+  paddleocr      -- PaddleOCR only (upstream runtime; downloads weights)
   tesseract      -- Tesseract only
 
-"auto" exists because PaddleOCR needs a one-time weights download. On a
-machine that has never had network access those weights are absent, and
-silently producing no text would violate the honest-failure rule -- falling
-back to an engine whose data ships with the OS keeps ingestion working and
-records which engine actually ran.
+"auto" tries engines in order and falls back rather than failing ingestion.
+Silently producing no text would violate the honest-failure rule, so the
+engine that actually ran is recorded on every chunk it produces.
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ from __future__ import annotations
 from app.core.config import Settings
 from app.services.ocr.base import OcrEngine
 from app.services.ocr.paddle import PaddleOcrEngine
+from app.services.ocr.rapid import RapidOcrEngine
 from app.services.ocr.tesseract import TesseractOcrEngine
 
 
@@ -64,13 +64,18 @@ def _select(preference: str, settings: Settings) -> OcrEngine:
         tesseract = TesseractOcrEngine()
         return tesseract if tesseract.available() else NullOcrEngine()  # type: ignore[return-value]
 
-    paddle = PaddleOcrEngine(settings.ocr_languages, model_dir=settings.ocr_model_dir)
     if preference == "paddleocr":
+        paddle = PaddleOcrEngine(settings.ocr_languages, model_dir=settings.ocr_model_dir)
         return paddle if paddle.available() else NullOcrEngine()  # type: ignore[return-value]
 
-    # auto
-    if paddle.available():
-        return paddle
+    if preference == "rapidocr":
+        rapid = RapidOcrEngine(settings.ocr_languages)
+        return rapid if rapid.available() else NullOcrEngine()  # type: ignore[return-value]
+
+    # auto: RapidOCR first (bundled weights, no download), then Tesseract.
+    rapid = RapidOcrEngine(settings.ocr_languages)
+    if rapid.available():
+        return rapid
     tesseract = TesseractOcrEngine()
     if tesseract.available():
         return tesseract
