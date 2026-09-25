@@ -159,6 +159,19 @@ def test_grounding_gate_accepts_cited_answer() -> None:
     assert result.cited_ids == ["ev_real"]
 
 
+def test_grounding_gate_rejects_claim_not_in_cited_passage() -> None:
+    gate = GroundingGate()
+    result = gate.validate(
+        "Falcon records cost $99 per month [chunk:ev_real].",
+        allowed_chunk_ids={"ev_real"},
+        task="ask",
+        evidence_by_id={"ev_real": "Falcon records stay local for 18 months."},
+        query="What is the Falcon records pricing?",
+    )
+    assert result.outcome == "insufficient_evidence"
+    assert result.reason == "content_not_grounded"
+
+
 def test_extractive_adapter_emits_citations_or_refusal() -> None:
     adapter = ExtractiveChatAdapter()
     refusal = adapter.generate("Question without chunks", stream=False)

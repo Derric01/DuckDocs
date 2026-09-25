@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
@@ -224,7 +225,7 @@ class SqlDocumentRepository:
 
     def search_evidence(self, query: str, limit: int) -> list[Evidence]:
         self._hydrate()
-        terms = {term for term in query.lower().split() if len(term) > 2}
+        terms = {term for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", query.lower()) if len(term) > 2}
         if not terms:
             return []
         ranked = sorted(self.evidence.values(), key=lambda item: self._score(item, terms), reverse=True)

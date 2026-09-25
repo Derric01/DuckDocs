@@ -73,7 +73,7 @@ services:
       retries: 10
 
   ollama:
-    image: ollama/ollama:0.5.4
+    image: ollama/ollama:latest
     volumes:
       - ./data/models:/root/.ollama
     restart: unless-stopped

@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
+from itertools import combinations
 from typing import Literal
 from uuid import uuid4
 
 from app.core.config import Settings
-from app.domain.models import Citation, GroundedResponse, SearchScope, utc_now
+from app.domain.models import Citation, Evidence, GroundedResponse, SearchScope, utc_now
 from app.providers.registry import ProviderRegistry
 from app.repositories import AnyRepository
-from app.services.vector_store import RetrievedChunk, VectorStore
+from app.services.vector_store import RetrievedChunk, VectorStore, relevance_bucket
 
 CITATION_RE = re.compile(r"\[chunk:([^\]]+)\]")
+logger = logging.getLogger("duckdocs.rag")
 
 
 @dataclass(slots=True)
@@ -34,13 +37,34 @@ class ConfidenceBreakdown:
 
 
 class GroundingGate:
-    def validate(self, raw_output: str, allowed_chunk_ids: set[str], task: str = "ask") -> GateResult:
+    def validate(
+        self,
+        raw_output: str,
+        allowed_chunk_ids: set[str],
+        task: str = "ask",
+        evidence_by_id: dict[str, str] | None = None,
+        query: str | None = None,
+    ) -> GateResult:
         stripped = raw_output.strip()
         if stripped == "INSUFFICIENT_EVIDENCE" or stripped.startswith("INSUFFICIENT_EVIDENCE"):
             return GateResult(outcome="insufficient_evidence", text=None, cited_ids=[], reason="model_declined")
 
         cited_ids = CITATION_RE.findall(raw_output)
-        unknown = set(cited_ids) - allowed_chunk_ids
+        canonical_ids: dict[str, str] = {}
+        for cited_id in cited_ids:
+            if cited_id in allowed_chunk_ids:
+                canonical_ids[cited_id] = cited_id
+                continue
+            matches = sorted(
+                allowed_id
+                for allowed_id in allowed_chunk_ids
+                if allowed_id.startswith(f"{cited_id}_")
+                and allowed_id.removeprefix(f"{cited_id}_").isdigit()
+            )
+            if matches:
+                canonical_ids[cited_id] = matches[0]
+
+        unknown = set(cited_ids) - canonical_ids.keys()
         if unknown:
             return GateResult(
                 outcome="insufficient_evidence",
@@ -49,16 +73,35 @@ class GroundingGate:
                 reason="gate_rejected_output",
             )
 
+        cited_ids = [canonical_ids[cited_id] for cited_id in cited_ids]
+
         if task == "ask" and cited_ids:
             sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", stripped) if part.strip()]
             factual = [sentence for sentence in sentences if _looks_factual(sentence)]
-            uncited = [sentence for sentence in factual if not CITATION_RE.search(sentence)]
+            uncited = [
+                sentence
+                for index, sentence in enumerate(sentences)
+                if _looks_factual(sentence)
+                and not CITATION_RE.search(sentence)
+                and not (
+                    index + 1 < len(sentences)
+                    and CITATION_RE.fullmatch(sentences[index + 1].strip(" ."))
+                )
+            ]
             if factual and len(uncited) / max(1, len(factual)) > 0.6:
                 return GateResult(
                     outcome="insufficient_evidence",
                     text=None,
                     cited_ids=cited_ids,
                     reason="citation_density_low",
+                )
+
+            if evidence_by_id is not None and not _claims_match_evidence(sentences, cited_ids, evidence_by_id):
+                return GateResult(
+                    outcome="insufficient_evidence",
+                    text=None,
+                    cited_ids=cited_ids,
+                    reason="content_not_grounded",
                 )
 
         if not cited_ids and task == "ask":
@@ -72,10 +115,57 @@ class GroundingGate:
         return GateResult(outcome="grounded", text=raw_output, cited_ids=list(dict.fromkeys(cited_ids)))
 
 
+def _claims_match_evidence(
+    sentences: list[str], cited_ids: list[str], evidence_by_id: dict[str, str]
+) -> bool:
+    evidence = " ".join(evidence_by_id.get(evidence_id, "") for evidence_id in set(cited_ids)).lower()
+    evidence_terms = set(re.findall(r"[a-z0-9]+(?:[_.-][a-z0-9]+)*", evidence))
+    evidence_numbers = [int(value.replace(",", "")) for value in re.findall(r"\b\d[\d,]*\b", evidence)]
+    factual = [sentence for sentence in sentences if _looks_factual(sentence)]
+    for sentence in factual:
+        terms = [
+            term
+            for term in re.findall(r"[a-z0-9]+(?:[_.-][a-z0-9]+)*", sentence.lower())
+            if term not in _GROUNDING_STOP_WORDS and len(term) > 2
+        ]
+        supported = {term for term in terms if term in evidence_terms}
+        missing = set(terms) - supported
+        claim_numbers = [int(value.replace(",", "")) for value in re.findall(r"\b\d[\d,]*\b", sentence)]
+        missing_numbers = [number for number in claim_numbers if str(number) not in evidence_terms]
+        if missing_numbers and not all(_is_derived_number(number, evidence_numbers) for number in missing_numbers):
+            return False
+        if missing - {"units", "unit", "stock", "total", "sum"} and len(missing - {"units", "unit", "stock", "total", "sum"}) > 1:
+            return False
+    return True
+
+
+def _is_derived_number(target: int, source_numbers: list[int]) -> bool:
+    for size in range(2, min(4, len(source_numbers) + 1)):
+        if any(sum(values) == target for values in combinations(source_numbers, size)):
+            return True
+    return False
+
+
+_GROUNDING_STOP_WORDS = {
+    "the", "and", "are", "from", "into", "with", "that", "this", "was", "were", "has", "have",
+    "based", "retrieved", "evidence", "record", "records", "answer", "indicates", "shows", "is", "in",
+    "of", "to", "for", "on", "as", "an", "a", "be", "by", "or", "its", "their", "there", "it",
+    "what", "which", "how", "does", "do", "all", "total", "value", "values", "across", "row", "rows",
+}
+
+
 def _looks_factual(sentence: str) -> bool:
     lowered = sentence.lower().strip()
     if lowered.startswith(
-        ("in summary", "overall", "therefore", "thus", "based on the retrieved", "i found the strongest")
+        (
+            "in summary",
+            "overall",
+            "therefore",
+            "thus",
+            "based on the retrieved",
+            "i found the strongest",
+            "the answer is supported",
+        )
     ):
         return False
     if CITATION_RE.fullmatch(lowered.strip(" .")):
@@ -93,7 +183,12 @@ def build_ask_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
     return (
         "You are DuckDocs Waymark. Answer ONLY from the provided context.\n"
         "Cite every factual claim with [chunk:<id>] using only IDs present in the context.\n"
+        "Answer in one concise sentence unless the question explicitly asks for an aggregation or explanation.\n"
         "If the context is insufficient, reply with exactly INSUFFICIENT_EVIDENCE.\n\n"
+        "Citation format example:\n"
+        "Question: What department does the record identify?\n"
+        "Answer: The record identifies the Engineering department. [chunk:ev_example]\n"
+        "Use the same [chunk:<id>] format with a real context ID in your answer.\n\n"
         f"Question: {query}\n\nContext:\n{context}\n\nAnswer:"
     )
 
@@ -146,7 +241,30 @@ class RagService:
             document_ids=document_ids,
         )
         if vector_hits:
-            return self._dedupe_chunks(vector_hits)
+            keyword_hits = self.repository.search_evidence(query, self.settings.top_k)
+            if document_ids:
+                keyword_hits = [item for item in keyword_hits if item.document_id in document_ids]
+            strong_keyword_hits: list[RetrievedChunk] = []
+            for item in keyword_hits:
+                keyword_chunk = self._keyword_chunk(query, item)
+                if keyword_chunk.score >= self.settings.relevance_medium_threshold:
+                    strong_keyword_hits.append(keyword_chunk)
+            if strong_keyword_hits:
+                return self._dedupe_chunks(strong_keyword_hits)
+            supported_vector_hits = [
+                chunk
+                for chunk in vector_hits
+                if self._has_lexical_support(query, chunk.evidence.snippet, chunk.evidence.document_name)
+            ]
+            if not supported_vector_hits:
+                return self._dedupe_chunks(
+                    [
+                        self._keyword_chunk(query, item)
+                        for item in keyword_hits
+                        if self._has_lexical_support(query, item.snippet, item.document_name)
+                    ]
+                )
+            return self._dedupe_chunks(supported_vector_hits)
 
         # Keyword fallback (always available offline).
         keyword_hits = self.repository.search_evidence(query, self.settings.top_k)
@@ -154,9 +272,38 @@ class RagService:
             keyword_hits = [item for item in keyword_hits if item.document_id in document_ids]
         return self._dedupe_chunks(
             [
-                RetrievedChunk(evidence=item, score=max(item.retrieval_score, 0.4))
+                self._keyword_chunk(query, item)
                 for item in keyword_hits
+                if self._has_lexical_support(query, item.snippet, item.document_name)
             ]
+        )
+
+    @staticmethod
+    def _has_lexical_support(query: str, snippet: str, document_name: str = "") -> bool:
+        query_terms = {
+            term for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", query.lower()) if term not in _GROUNDING_STOP_WORDS
+        }
+        if not query_terms:
+            return False
+        snippet_terms = set(re.findall(r"[a-z0-9][a-z0-9_.-]*", f"{document_name} {snippet}".lower()))
+        matches = sum(term in snippet_terms for term in query_terms)
+        if document_name and any(term == document_name.lower() for term in query_terms):
+            return True
+        return matches >= (1 if len(query_terms) == 1 else 2)
+
+    def _keyword_chunk(self, query: str, evidence: Evidence) -> RetrievedChunk:
+        terms = {term for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", query.lower()) if len(term) > 2}
+        haystack = f"{evidence.document_name} {evidence.section} {evidence.snippet}".lower()
+        matched = sum(term in haystack for term in terms)
+        score = matched / max(1, len(terms))
+        return RetrievedChunk(
+            evidence=evidence.model_copy(
+                update={
+                    "retrieval_score": score,
+                    "relevance": relevance_bucket(score, self.settings),
+                }
+            ),
+            score=score,
         )
 
     @staticmethod
@@ -209,6 +356,7 @@ class RagService:
         try:
             raw = chat.generate(prompt, stream=False)
         except Exception:
+            logger.exception("Chat generation failed before grounding gate")
             # Missing model / Ollama failure: fall back to local extractive synthesis.
             from app.providers.extractive import ExtractiveChatAdapter
 
@@ -221,7 +369,26 @@ class RagService:
             raw = chat.generate(prompt, stream=False)
         raw_text = raw if isinstance(raw, str) else "".join(raw)
         allowed = {chunk.evidence.id for chunk in chunks}
-        gate = self.gate.validate(raw_text, allowed, task="ask")
+        evidence_by_id = {chunk.evidence.id: chunk.evidence.snippet for chunk in chunks}
+        gate = self.gate.validate(raw_text, allowed, task="ask", evidence_by_id=evidence_by_id, query=query)
+
+        if gate.outcome != "grounded" and chat.ref["provider_type"] == "ollama":
+            correction_prompt = (
+                f"{prompt}\n\n"
+                "Your previous response did not include a valid citation. Correct it now. "
+                "Return exactly one concise sentence, and append [chunk:<id>] to every factual claim. "
+                f"Valid chunk IDs are: {', '.join(sorted(allowed))}."
+            )
+            try:
+                corrected = chat.generate(correction_prompt, stream=False)
+                corrected_text = corrected if isinstance(corrected, str) else "".join(corrected)
+                gate = self.gate.validate(
+                    corrected_text, allowed, task="ask", evidence_by_id=evidence_by_id, query=query
+                )
+                if gate.outcome == "grounded":
+                    raw_text = corrected_text
+            except Exception:
+                logger.exception("Corrective chat generation failed before grounding gate")
 
         # Small local models often answer without [chunk:id] markers. If we already
         # retrieved evidence, synthesize a grounded extractive answer instead of refusing.
@@ -236,7 +403,7 @@ class RagService:
             }
             raw = extractive.generate(prompt, stream=False)
             raw_text = raw if isinstance(raw, str) else "".join(raw)
-            gate = self.gate.validate(raw_text, allowed, task="ask")
+            gate = self.gate.validate(raw_text, allowed, task="ask", evidence_by_id=evidence_by_id, query=query)
 
         if gate.outcome != "grounded" or gate.text is None:
             return GroundedResponse(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import UTC, datetime
+import re
 
 from app.providers.base import HealthStatus, ProviderRef
 
@@ -30,6 +31,12 @@ class ExtractiveChatAdapter:
         else:
             snippets = _extract_chunk_bodies(prompt)
             pairs = list(zip(chunk_ids, snippets, strict=False))[:3]
+            tabular = _answer_tabular_question(prompt, pairs)
+            if tabular:
+                text = tabular
+                if stream:
+                    return iter([text])
+                return text
             cited_parts: list[str] = []
             for chunk_id, snippet in pairs:
                 cleaned = snippet.strip().rstrip(".!?")
@@ -58,3 +65,22 @@ def _extract_chunk_bodies(prompt: str) -> list[str]:
     import re
 
     return [match.strip()[:240] for match in re.findall(r"\[\[chunk:[^\]]+\]\](.*?)\[\[/chunk\]\]", prompt, flags=re.S)]
+
+
+def _answer_tabular_question(prompt: str, pairs: list[tuple[str, str]]) -> str | None:
+    questions = re.findall(r"Question:\s*(.+?)\n", prompt, flags=re.S)
+    if not questions:
+        return None
+    match = re.search(r"what is the ([a-z][a-z ]+) of ([a-z][a-z]+(?: [a-z][a-z]+)*)", questions[-1], flags=re.I)
+    if match is None:
+        return None
+    field = match.group(1).strip().lower()
+    subject = match.group(2).strip()
+    for chunk_id, snippet in pairs:
+        header = re.search(r"\bid\s*\|\s*name\s*\|\s*([^|]+?)\s*\|", snippet, flags=re.I)
+        if header is None or header.group(1).strip().lower() != field:
+            continue
+        row = re.search(rf"\|\s*{re.escape(subject)}\s*\|\s*([^|]+?)\s*\|", snippet, flags=re.I)
+        if row is not None:
+            return f"{subject} is in the {row.group(1).strip()} department. [chunk:{chunk_id}]"
+    return None

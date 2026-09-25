@@ -26,7 +26,12 @@ class OllamaChatAdapter:
         }
 
     def generate(self, prompt: str, *, stream: bool = True) -> Iterator[str] | str:
-        payload = {"model": self.model_name, "prompt": prompt, "stream": stream}
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": stream,
+            "options": {"temperature": 0},
+        }
         if stream:
             return self._stream(payload)
         body = self._post_json("/api/generate", payload)

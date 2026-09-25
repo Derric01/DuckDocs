@@ -5,6 +5,7 @@ PostgreSQL/SQLAlchemy implementation without changing routers or services.
 """
 
 import json
+import re
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -144,7 +145,7 @@ class DocumentRepository:
         return updated
 
     def search_evidence(self, query: str, limit: int) -> list[Evidence]:
-        terms = {term for term in query.lower().split() if len(term) > 2}
+        terms = {term for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", query.lower()) if len(term) > 2}
         if not terms:
             return []
         ranked = sorted(self.evidence.values(), key=lambda item: self._score(item, terms), reverse=True)

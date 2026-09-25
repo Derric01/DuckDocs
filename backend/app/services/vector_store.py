@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -9,6 +10,8 @@ from urllib.parse import urlparse
 from app.core.config import Settings
 from app.domain.models import Evidence
 from app.providers.base import EmbeddingProviderAdapter
+
+logger = logging.getLogger("duckdocs.vector_store")
 
 
 @dataclass(slots=True)
@@ -65,13 +68,20 @@ class VectorStore:
 
     def upsert_evidence(self, evidence_units: list[Evidence], embedder: EmbeddingProviderAdapter) -> int:
         if not self.available or not evidence_units:
+            logger.warning(
+                "Vector indexing skipped: available=%s evidence_units=%d",
+                self.available,
+                len(evidence_units),
+            )
             return 0
         if embedder.ref["provider_type"] == "keyword":
+            logger.warning("Vector indexing skipped: embedding provider is the keyword fallback")
             return 0
         try:
             texts = [unit.snippet for unit in evidence_units]
             embeddings = embedder.embed(texts)
             if not embeddings or not embeddings[0]:
+                logger.warning("Vector indexing returned no embeddings for %d evidence units", len(evidence_units))
                 return 0
             assert self._collection is not None
             self._collection.upsert(
@@ -92,6 +102,7 @@ class VectorStore:
             )
             return len(evidence_units)
         except Exception:
+            logger.exception("Vector indexing failed for %d evidence units", len(evidence_units))
             return 0
 
     def delete_document(self, document_id: str) -> None:
@@ -142,10 +153,23 @@ class VectorStore:
                     continue
                 chunks.append(
                     RetrievedChunk(
-                        evidence=evidence.model_copy(update={"retrieval_score": score}),
+                        evidence=evidence.model_copy(
+                            update={
+                                "retrieval_score": score,
+                                "relevance": relevance_bucket(score, self.settings),
+                            }
+                        ),
                         score=score,
                     )
                 )
             return chunks
         except Exception:
             return []
+
+
+def relevance_bucket(score: float, settings: Settings) -> str:
+    if score >= settings.relevance_high_threshold:
+        return "High"
+    if score >= settings.relevance_medium_threshold:
+        return "Medium"
+    return "Low"
