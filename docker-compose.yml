@@ -46,6 +46,8 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
+      ollama-model-init:
+        condition: service_completed_successfully
       chromadb:
         condition: service_healthy
     restart: unless-stopped
@@ -83,6 +85,30 @@ services:
       interval: 15s
       timeout: 10s
       retries: 10
+
+  ollama-model-init:
+    image: ollama/ollama:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        for model in "$${DUCKDOCS_CHAT_MODEL}" "$${DUCKDOCS_EMBED_MODEL}"; do
+          if ollama show "$$model" >/dev/null 2>&1; then
+            echo "Ollama model already available: $$model"
+          else
+            echo "Pulling configured Ollama model: $$model"
+            ollama pull "$$model"
+          fi
+        done
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      DUCKDOCS_CHAT_MODEL: ${DUCKDOCS_CHAT_MODEL:-gemma3:1b}
+      DUCKDOCS_EMBED_MODEL: ${DUCKDOCS_EMBED_MODEL:-nomic-embed-text}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+    networks: [duckdocs_internal]
 
   chromadb:
     image: chromadb/chroma:0.5.23

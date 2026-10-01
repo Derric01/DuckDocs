@@ -123,15 +123,21 @@ def _claims_match_evidence(
     evidence_numbers = [int(value.replace(",", "")) for value in re.findall(r"\b\d[\d,]*\b", evidence)]
     factual = [sentence for sentence in sentences if _looks_factual(sentence)]
     for sentence in factual:
+        # Citation IDs identify the supporting chunk; they are metadata, not
+        # claim text, and must not be compared against the evidence vocabulary.
+        claim = CITATION_RE.sub("", sentence)
         terms = [
             term
-            for term in re.findall(r"[a-z0-9]+(?:[_.-][a-z0-9]+)*", sentence.lower())
+            for term in re.findall(r"[a-z0-9]+(?:[_.-][a-z0-9]+)*", claim.lower())
             if term not in _GROUNDING_STOP_WORDS and len(term) > 2
         ]
         supported = {term for term in terms if term in evidence_terms}
         missing = set(terms) - supported
-        claim_numbers = [int(value.replace(",", "")) for value in re.findall(r"\b\d[\d,]*\b", sentence)]
-        missing_numbers = [number for number in claim_numbers if str(number) not in evidence_terms]
+        claim_numbers = [int(value.replace(",", "")) for value in re.findall(r"\b\d[\d,]*\b", claim)]
+        # `evidence_numbers` already removes thousands separators; comparing
+        # against raw token strings incorrectly rejects supported values like
+        # 2,000 (whose normalized claim token is 2000).
+        missing_numbers = [number for number in claim_numbers if number not in evidence_numbers]
         if missing_numbers and not all(_is_derived_number(number, evidence_numbers) for number in missing_numbers):
             return False
         if missing - {"units", "unit", "stock", "total", "sum"} and len(missing - {"units", "unit", "stock", "total", "sum"}) > 1:
@@ -153,9 +159,15 @@ _GROUNDING_STOP_WORDS = {
     "what", "which", "how", "does", "do", "all", "total", "value", "values", "across", "row", "rows",
 }
 
+_RETRIEVAL_SUPPORT_STOP_WORDS = _GROUNDING_STOP_WORDS | {
+    "according", "document", "recommend", "recommended",
+}
+
 
 def _looks_factual(sentence: str) -> bool:
     lowered = sentence.lower().strip()
+    if CITATION_RE.search(sentence):
+        return True
     if lowered.startswith(
         (
             "in summary",
@@ -170,7 +182,7 @@ def _looks_factual(sentence: str) -> bool:
         return False
     if CITATION_RE.fullmatch(lowered.strip(" .")):
         return False
-    return any(char.isdigit() for char in sentence) or len(sentence.split()) > 6
+    return any(char.isdigit() for char in sentence) or len(sentence.split()) > 3
 
 
 def build_ask_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
@@ -281,7 +293,9 @@ class RagService:
     @staticmethod
     def _has_lexical_support(query: str, snippet: str, document_name: str = "") -> bool:
         query_terms = {
-            term for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", query.lower()) if term not in _GROUNDING_STOP_WORDS
+            term
+            for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", query.lower())
+            if term not in _RETRIEVAL_SUPPORT_STOP_WORDS
         }
         if not query_terms:
             return False

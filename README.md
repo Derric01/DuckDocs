@@ -59,16 +59,9 @@ docker compose up -d --build
 
 Open `http://localhost:3000`. The API is on `http://localhost:8000`.
 
-### Local models (one-time after first start)
+### Local models
 
-Ollama starts empty. The chat and embedding models are **not** bundled; pull them once:
-
-```powershell
-docker compose exec ollama ollama pull gemma3:1b
-docker compose exec ollama ollama pull nomic-embed-text
-```
-
-Until those pulls finish, DuckDocs still runs on the offline path (keyword search + extractive answers). After the pulls, Ollama chat/embeddings attach automatically when reachable.
+On first startup, Compose checks for the configured chat and embedding models and pulls any that are missing. The model files persist in `./data/models`, so subsequent starts reuse them. The backend waits for both models to be available before starting. You can override `DUCKDOCS_CHAT_MODEL` and `DUCKDOCS_EMBED_MODEL` in `.env`.
 
 Check what is installed:
 

@@ -67,7 +67,14 @@ class OllamaChatAdapter:
                 for item in payload.get("models", [])
                 if isinstance(item, dict)
             }
-            if self.model_name and models:
+            if not models:
+                return HealthStatus(
+                    reachable=False,
+                    latency_ms=round((monotonic() - started) * 1000, 2),
+                    error="No models are installed in Ollama.",
+                    checked_at=datetime.now(UTC),
+                )
+            if self.model_name:
                 base = self.model_name.split(":")[0]
                 matched = any(
                     name == self.model_name or name == base or name.startswith(f"{base}:") for name in models
@@ -127,13 +134,18 @@ class OllamaEmbeddingAdapter:
         self._dimension: int | None = None
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        vectors: list[list[float]] = []
-        for text in texts:
-            body = self._post_json("/api/embeddings", {"model": self.model_name, "prompt": text})
-            vector = [float(value) for value in body.get("embedding", [])]
-            if self._dimension is None and vector:
-                self._dimension = len(vector)
-            vectors.append(vector)
+        if not texts:
+            return []
+        body = self._post_json("/api/embed", {"model": self.model_name, "input": texts})
+        vectors = [[float(value) for value in vector] for vector in body.get("embeddings", [])]
+        if len(vectors) != len(texts) or any(not vector for vector in vectors):
+            raise RuntimeError(
+                f"Ollama returned {len(vectors)} embeddings for {len(texts)} input texts using '{self.model_name}'."
+            )
+        dimensions = {len(vector) for vector in vectors}
+        if len(dimensions) != 1:
+            raise RuntimeError(f"Ollama returned inconsistent embedding dimensions: {sorted(dimensions)}")
+        self._dimension = dimensions.pop()
         return vectors
 
     def health_check(self) -> HealthStatus:

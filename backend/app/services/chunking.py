@@ -54,13 +54,36 @@ def _paragraphs(text: str) -> list[tuple[int, int, str]]:
     return [paragraph for paragraph in paragraphs if paragraph[2]]
 
 
+def _split_oversized_paragraphs(
+    paragraphs: list[tuple[int, int, str]], max_words: int, overlap_words: int
+) -> list[tuple[int, int, str]]:
+    """Bound long single-line PDF/OCR paragraphs while retaining local overlap."""
+    limit = max(1, max_words)
+    overlap = min(max(0, overlap_words), limit - 1)
+    step = max(1, limit - overlap)
+    split: list[tuple[int, int, str]] = []
+    for line_start, line_end, text in paragraphs:
+        words = text.split()
+        if len(words) <= limit:
+            split.append((line_start, line_end, text))
+            continue
+        for start in range(0, len(words), step):
+            window = words[start : start + limit]
+            split.append((line_start, line_end, " ".join(window)))
+            if start + limit >= len(words):
+                break
+    return split
+
+
 def _chunk_page(
     page: ParsedPage,
     fidelity_tier: FidelityTier,
     anchor_quality: AnchorQuality,
     settings: Settings,
 ) -> list[ChunkCandidate]:
-    paragraphs = _paragraphs(page.text)
+    paragraphs = _split_oversized_paragraphs(
+        _paragraphs(page.text), settings.chunk_max_words, settings.chunk_overlap_words
+    )
     if not paragraphs:
         return []
 

@@ -162,8 +162,22 @@ class VectorStore:
                         score=score,
                     )
                 )
+            logger.debug(
+                "Vector query returned %d hits (%d passed similarity threshold %.3f) from %s",
+                len(ids),
+                len(chunks),
+                min_similarity,
+                self._collection.name,
+            )
             return chunks
         except Exception:
+            logger.exception(
+                "Vector query failed (collection=%s provider=%s model=%s top_k=%d)",
+                getattr(self._collection, "name", "unavailable"),
+                embedder.ref.get("provider_type", "unknown"),
+                embedder.ref.get("model_name", "unknown"),
+                top_k,
+            )
             return []
 
 

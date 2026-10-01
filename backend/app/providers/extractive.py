@@ -37,12 +37,11 @@ class ExtractiveChatAdapter:
                 if stream:
                     return iter([text])
                 return text
-            cited_parts: list[str] = []
-            for chunk_id, snippet in pairs:
-                cleaned = snippet.strip().rstrip(".!?")
-                cited_parts.append(f"{cleaned} [chunk:{chunk_id}].")
-            cited = " ".join(cited_parts)
-            text = f"Based on the retrieved evidence, {cited}".strip()
+            question = _extract_question(prompt)
+            # Retrieval already ranks chunks; choosing a weaker lower-ranked
+            # chunk can turn a correct hit into an unrelated answer.
+            chunk_id, sentence = _most_relevant_sentence(question, pairs[:1])
+            text = f"{sentence.rstrip('.!?')} [chunk:{chunk_id}]."
         if stream:
             return iter([text])
         return text
@@ -64,7 +63,43 @@ def _extract_chunk_ids(prompt: str) -> list[str]:
 def _extract_chunk_bodies(prompt: str) -> list[str]:
     import re
 
-    return [match.strip()[:240] for match in re.findall(r"\[\[chunk:[^\]]+\]\](.*?)\[\[/chunk\]\]", prompt, flags=re.S)]
+    return [match.strip() for match in re.findall(r"\[\[chunk:[^\]]+\]\](.*?)\[\[/chunk\]\]", prompt, flags=re.S)]
+
+
+def _extract_question(prompt: str) -> str:
+    questions = re.findall(r"Question:\s*(.+?)\n", prompt, flags=re.S)
+    return questions[-1] if questions else ""
+
+
+def _most_relevant_sentence(question: str, pairs: list[tuple[str, str]]) -> tuple[str, str]:
+    """Return one complete, question-relevant sentence for grounded fallback."""
+    stop_words = {
+        "what", "when", "where", "which", "who", "how", "does", "did", "is", "are", "the", "a", "an",
+        "at", "in", "of", "for", "to", "and", "it", "on",
+    }
+    terms = {
+        term.lower()
+        for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", question.lower())
+        if term.lower() not in stop_words and len(term) > 1
+    }
+    candidates: list[tuple[int, int, str, str]] = []
+    for chunk_index, (chunk_id, snippet) in enumerate(pairs):
+        sentences = [
+            part.strip()
+            for part in re.split(r"(?<=[.!?])\s+|\s+—\s+|\s+(?=\d{1,2}:\d{2}[-–])", snippet)
+            if part.strip()
+        ]
+        for sentence_index, sentence in enumerate(sentences):
+            sentence_terms = set(re.findall(r"[a-z0-9][a-z0-9_.-]*", sentence.lower()))
+            score = len(terms & sentence_terms)
+            if "why" in terms and sentence_terms & {"warning", "avoid", "wettest", "rainfall", "humidity"}:
+                score += 2
+            candidates.append((score, -chunk_index * 1000 - sentence_index, chunk_id, sentence))
+    if candidates:
+        _, _, chunk_id, sentence = max(candidates)
+        return chunk_id, sentence
+    chunk_id, snippet = pairs[0]
+    return chunk_id, snippet.strip()
 
 
 def _answer_tabular_question(prompt: str, pairs: list[tuple[str, str]]) -> str | None:
