@@ -269,7 +269,16 @@ async function hydrateAnswer(response: ApiGroundedResponse): Promise<GroundedAns
   const citations = await Promise.all(
     response.citations.map(async (citation) => {
       try {
-        return await duckDocsApi.getEvidence(citation.evidence_unit_id);
+        const evidence = await duckDocsApi.getEvidence(citation.evidence_unit_id);
+        return {
+          ...evidence,
+          // The API citation carries the selected source passage. Keep the
+          // fetched record's identity and page metadata without replacing the
+          // precise quote with its full retrieval chunk.
+          snippet: citation.snippet,
+          // OCR boxes describe the whole indexed unit, not this shorter quote.
+          bbox: citation.snippet === evidence.snippet ? evidence.bbox : null,
+        };
       } catch {
         return {
           id: citation.evidence_unit_id,

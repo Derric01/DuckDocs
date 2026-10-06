@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.providers.extractive import _most_relevant_sentence
-from app.services.rag import GroundingGate
+from app.services.rag import GroundingGate, select_evidence_passage
 
 
 def test_why_question_prefers_relevant_climate_warning_sentence() -> None:
@@ -37,3 +37,66 @@ def test_grounding_gate_checks_short_cited_claims() -> None:
 
     assert result.outcome == "insufficient_evidence"
     assert result.reason == "content_not_grounded"
+
+
+def test_citation_selects_only_kyoto_climate_sentences() -> None:
+    query = "Why is June not recommended for visiting Kyoto according to the document?"
+    snippet = (
+        "The food section recommends Yudofu Sagano. Kyoto's climate has hot and humid summers. "
+        "The wettest month is June with 14d of rainfall. Warning: Avoid traveling during the wettest months "
+        "(June) and hottest months (July and August), as the heat and humidity can be overwhelming."
+    )
+    selected = select_evidence_passage(
+        query,
+        "June is not recommended because it is the wettest month with 14 days of rainfall, and the document "
+        "warns travelers to avoid wettest months due to heat and humidity.",
+        snippet,
+    )
+
+    assert "wettest month is June" in selected
+    assert "Avoid traveling during the wettest months" in selected
+    assert "Yudofu" not in selected
+    assert "hot and humid summers" not in selected
+
+
+def test_citation_selects_restaurant_entry_without_neighboring_description() -> None:
+    snippet = (
+        "Food & Dining. Yudofu Sagano $$ · Arashiyama — Order the Yudofu — "
+        "A popular spot for boiled tofu, often served with dipping sauces and side dishes."
+    )
+    selected = select_evidence_passage(
+        "What is the recommended restaurant for Yudofu?",
+        "The recommended restaurant is Yudofu Sagano in Arashiyama.",
+        snippet,
+    )
+
+    assert selected == "Yudofu Sagano $$ · Arashiyama — Order the Yudofu"
+    assert "Food & Dining" not in selected
+    assert "A popular spot" not in selected
+
+
+def test_hare_tortoise_citation_selects_supporting_sentence_only() -> None:
+    snippet = (
+        "The Hare ran quickly at first and soon left the Tortoise behind. "
+        "Confident he would win, the Hare stopped to rest and fell asleep. "
+        "The Tortoise continued at a steady pace and crossed the finish line first."
+    )
+    selected = select_evidence_passage(
+        "Why did the Hare lose the race?",
+        "The Hare lost because he stopped to rest and fell asleep.",
+        snippet,
+    )
+
+    assert selected == "the Hare stopped to rest and fell asleep"
+    assert "Confident" not in selected
+    assert "Tortoise" not in selected
+
+
+def test_unrelated_restaurant_row_does_not_get_a_quote_for_yudofu() -> None:
+    selected = select_evidence_passage(
+        "What is the recommended restaurant for Yudofu?",
+        "The recommended restaurant is Gion Nanba.",
+        "Recommended restaurants Gion Nanba — Order the Kaiseki.",
+    )
+
+    assert selected == ""

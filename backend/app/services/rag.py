@@ -152,11 +152,90 @@ def _is_derived_number(target: int, source_numbers: list[int]) -> bool:
     return False
 
 
+def select_evidence_passage(query: str, answer: str, snippet: str) -> str:
+    """Return the smallest source sentence/clause that covers the answer's key terms.
+
+    Chunk IDs and source metadata remain attached to the citation; this only
+    narrows the quoted text used by the evidence panel.
+    """
+    clean_answer = CITATION_RE.sub("", answer)
+
+    def tokenize(value: str) -> set[str]:
+        return set(re.findall(r"[a-z0-9]+(?:[_.-][a-z0-9]+)*", value.lower()))
+
+    answer_terms = {
+        term for term in tokenize(clean_answer) if term not in _EVIDENCE_STOP_WORDS and len(term) > 2
+    }
+    query_terms = {
+        term for term in tokenize(query) if term not in _EVIDENCE_STOP_WORDS and len(term) > 2
+    }
+    if not answer_terms:
+        return ""
+
+    # Split at sentence and phrase boundaries. PDF extraction can flatten
+    # headings into sentences, so commas and dashes also define candidate spans.
+    candidates: list[tuple[str, set[str]]] = []
+    sentence_parts = re.split(
+        r"(?<=[.!?])\s+|\n+|\s+(?=(?:The|Warning:|Avoid)\b)", snippet
+    )
+    for sentence in sentence_parts:
+        for match in re.finditer(r"[^,;\u2014\u2013]+", sentence):
+            start = match.start()
+            if start and sentence[start - 1] in "\u2014\u2013":
+                start -= 1
+            passage = sentence[start:match.end()].strip()
+            if passage:
+                candidates.append((passage, tokenize(passage)))
+    if not candidates:
+        return ""
+
+    source_terms = set().union(*(terms for _, terms in candidates))
+    query_terms &= source_terms
+    # Keep the citation tied to the subject asked about. If the retrieved
+    # chunk does not contain any non-generic query term, it cannot support a
+    # passage for this answer even if unrelated answer words happen to match.
+    if not query_terms or not (query_terms & answer_terms):
+        return ""
+    # In a relevant restaurant row, "Order ..." is the recommendation verb
+    # even when the generated answer names only the venue. Do not use this
+    # generic term to make an unrelated restaurant row appear relevant.
+    if "restaurant" in query.lower():
+        query_terms.add("order")
+
+    # A person/place name can repeat throughout a chunk. Discount terms shared
+    # by most candidate spans so they do not pull neighboring sentences in.
+    common_terms = {
+        term for term in answer_terms
+        if len(candidates) >= 3 and sum(term in terms for _, terms in candidates) > len(candidates) / 2
+    }
+    answer_terms -= common_terms
+    candidates = [(text, terms) for text, terms in candidates]
+
+    def score(terms: set[str]) -> float:
+        return 3.0 * len(terms & query_terms) + len(terms & answer_terms)
+
+    scored = [(score(terms), text, terms) for text, terms in candidates]
+    best = max((value for value, _, _ in scored), default=0.0)
+    if best <= 0:
+        return ""
+    selected = [
+        text for value, text, terms in scored
+        if value >= max(2.0, best * 0.65) and terms & query_terms
+    ]
+    return " ".join(dict.fromkeys(selected))
+
+
 _GROUNDING_STOP_WORDS = {
     "the", "and", "are", "from", "into", "with", "that", "this", "was", "were", "has", "have",
     "based", "retrieved", "evidence", "record", "records", "answer", "indicates", "shows", "is", "in",
     "of", "to", "for", "on", "as", "an", "a", "be", "by", "or", "its", "their", "there", "it",
     "what", "which", "how", "does", "do", "all", "total", "value", "values", "across", "row", "rows",
+}
+
+_EVIDENCE_STOP_WORDS = _GROUNDING_STOP_WORDS | {
+    "according", "document", "please", "tell", "explain", "why", "when", "where", "who",
+    "visit", "visiting", "recommended", "recommend", "answer", "provide", "based",
+    "restaurant", "restaurants", "food",
 }
 
 _RETRIEVAL_SUPPORT_STOP_WORDS = _GROUNDING_STOP_WORDS | {
@@ -438,7 +517,7 @@ class RagService:
                 },
             )
 
-        citations = self._bind_citations(gate.cited_ids, chunks)
+        citations = self._bind_citations(gate.cited_ids, chunks, query, gate.text or "")
         confidence = score_confidence(chunks, gate.cited_ids)
         # Removing inline [chunk:id] markers leaves the whitespace that
         # preceded them, which otherwise shows up as "... 18 months ."
@@ -479,11 +558,14 @@ class RagService:
 
         return result, tokens()
 
-    def _bind_citations(self, cited_ids: list[str], chunks: list[RetrievedChunk]) -> list[Citation]:
+    def _bind_citations(
+        self, cited_ids: list[str], chunks: list[RetrievedChunk], query: str, answer: str
+    ) -> list[Citation]:
         by_id = {chunk.evidence.id: chunk.evidence for chunk in chunks}
         citations: list[Citation] = []
         seen: set[str] = set()
         ordinal = 1
+        answer_sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", answer) if part.strip()]
         for evidence_id in cited_ids:
             if evidence_id in seen:
                 continue
@@ -491,12 +573,25 @@ class RagService:
             if evidence is None:
                 continue
             seen.add(evidence_id)
+            claim_parts: list[str] = []
+            for index, part in enumerate(answer_sentences):
+                if evidence_id in CITATION_RE.findall(part):
+                    claim_parts.append(part)
+                elif (
+                    index > 0
+                    and CITATION_RE.fullmatch(part.strip(" ."))
+                    and evidence_id in CITATION_RE.findall(answer_sentences[index - 1])
+                ):
+                    claim_parts.append(answer_sentences[index - 1])
+            snippet = select_evidence_passage(query, " ".join(claim_parts) or answer, evidence.snippet)
+            if not snippet:
+                logger.warning("No precise source passage matched citation %s; returning an empty quote", evidence.id)
             citations.append(
                 Citation(
                     id=f"cit_{uuid4().hex[:10]}",
                     ordinal=ordinal,
                     evidence_unit_id=evidence.id,
-                    snippet=evidence.snippet,
+                    snippet=snippet,
                 )
             )
             ordinal += 1
