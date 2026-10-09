@@ -38,9 +38,10 @@ class ExtractiveChatAdapter:
                     return iter([text])
                 return text
             question = _extract_question(prompt)
-            # Retrieval already ranks chunks; choosing a weaker lower-ranked
-            # chunk can turn a correct hit into an unrelated answer.
-            chunk_id, sentence = _most_relevant_sentence(question, pairs[:1])
+            # Rank candidate sentences across the retrieved set. The top chunk
+            # can be semantically close but contain only neighboring context;
+            # answerability is determined at sentence level.
+            chunk_id, sentence = _most_relevant_sentence(question, pairs)
             text = f"{sentence.rstrip('.!?')} [chunk:{chunk_id}]."
         if stream:
             return iter([text])
@@ -82,18 +83,34 @@ def _most_relevant_sentence(question: str, pairs: list[tuple[str, str]]) -> tupl
         for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", question.lower())
         if term.lower() not in stop_words and len(term) > 1
     }
+    is_why_question = bool(re.search(r"\bwhy\b", question, flags=re.I))
+    causal_cues = {
+        "because", "since", "therefore", "caused", "cause", "reason", "result", "resulted", "led",
+        "failed", "stopped", "rest", "nap", "sleep", "slept", "forgot", "ignored", "misjudged",
+    }
     candidates: list[tuple[int, int, str, str]] = []
     for chunk_index, (chunk_id, snippet) in enumerate(pairs):
         sentences = [
             part.strip()
-            for part in re.split(r"(?<=[.!?])\s+|\s+—\s+|\s+(?=\d{1,2}:\d{2}[-–])", snippet)
+            for part in re.split(
+                r"(?<=[.!?])\s+|\s+—\s+|\s+(?=\d{1,2}:\d{2}[-–])|\s+(?=Warning:|Best months?:)",
+                snippet,
+            )
             if part.strip()
         ]
         for sentence_index, sentence in enumerate(sentences):
             sentence_terms = set(re.findall(r"[a-z0-9][a-z0-9_.-]*", sentence.lower()))
             score = len(terms & sentence_terms)
-            if "why" in terms and sentence_terms & {"warning", "avoid", "wettest", "rainfall", "humidity"}:
-                score += 2
+            if is_why_question:
+                # A causal/decision question is best answered by the passage
+                # stating the recommendation or reason, rather than a nearby
+                # fact that merely shares a month/place token.
+                if sentence_terms & {"warning", "avoid", "because", "since"}:
+                    score += 4
+                if sentence_terms & {"wettest", "rainfall", "humidity", "hottest"}:
+                    score += 1
+                if sentence_terms & causal_cues:
+                    score += 3
             candidates.append((score, -chunk_index * 1000 - sentence_index, chunk_id, sentence))
     if candidates:
         _, _, chunk_id, sentence = max(candidates)

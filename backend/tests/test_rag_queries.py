@@ -6,7 +6,7 @@ from app.core.config import Settings
 from app.domain.models import Evidence
 from app.repositories.memory import DocumentRepository
 from app.services.rag import RagService
-from app.services.vector_store import VectorStore
+from app.services.vector_store import RetrievedChunk, VectorStore
 
 
 class _Chat:
@@ -171,3 +171,57 @@ def test_revenue_sum_is_grounded_as_synthesized_answer() -> None:
     assert response.outcome == "grounded"
     assert response.answer == "The total revenue is 37300."
     assert response.citations[0].evidence_unit_id == "ev_revenue"
+
+
+def test_semantic_vector_hit_is_not_discarded_for_lacking_exact_query_terms() -> None:
+    evidence = _evidence(
+        "ev_climate",
+        "kyoto-guide.pdf",
+        "Early summer brings persistent precipitation and uncomfortable humidity.",
+    )
+    service = _service([evidence])
+    service.vector_store.query = lambda *args, **kwargs: [RetrievedChunk(evidence, 0.82)]  # type: ignore[method-assign]
+
+    chunks = service.retrieve("Why is the rainy season uncomfortable?")
+
+    assert [chunk.evidence.id for chunk in chunks] == ["ev_climate"]
+
+
+def test_failed_document_reindex_does_not_delete_existing_vectors() -> None:
+    service = _service([_evidence("ev_retention", "policy.pdf", "Falcon records stay local for 18 months.")])
+
+    class _Store:
+        def __init__(self) -> None:
+            self.deleted = False
+
+        def upsert_evidence(self, units, embedder):  # type: ignore[no-untyped-def]
+            return 0
+
+        def delete_document(self, document_id, *, keep_ids=None):  # type: ignore[no-untyped-def]
+            self.deleted = True
+
+    store = _Store()
+    service.vector_store = store  # type: ignore[assignment]
+
+    assert service.index_document("doc_policy.pdf") == 0
+    assert not store.deleted
+
+
+def test_successful_document_reindex_removes_only_stale_vectors() -> None:
+    service = _service([_evidence("ev_retention", "policy.pdf", "Falcon records stay local for 18 months.")])
+
+    class _Store:
+        def __init__(self) -> None:
+            self.deleted_with: set[str] | None = None
+
+        def upsert_evidence(self, units, embedder):  # type: ignore[no-untyped-def]
+            return len(units)
+
+        def delete_document(self, document_id, *, keep_ids=None):  # type: ignore[no-untyped-def]
+            self.deleted_with = keep_ids
+
+    store = _Store()
+    service.vector_store = store  # type: ignore[assignment]
+
+    assert service.index_document("doc_policy.pdf") == 1
+    assert store.deleted_with == {"ev_retention"}

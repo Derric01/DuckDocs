@@ -156,9 +156,19 @@ def _has_min_alnum(text: str, minimum: int = 20) -> bool:
 
 
 def _decode(payload: bytes) -> str | None:
+    # A text extension is not proof that the payload is text. In particular,
+    # Latin-1 decodes every possible byte sequence, which used to turn binary
+    # uploads into apparently successful (and unsearchable) documents.
+    if not payload or b"\x00" in payload:
+        return None
     for encoding in ("utf-8-sig", "utf-8", "latin-1"):
         try:
-            return payload.decode(encoding)
+            decoded = payload.decode(encoding)
+            if decoded:
+                printable = sum(char.isprintable() or char in "\t\r\n" for char in decoded)
+                if printable / len(decoded) < 0.95:
+                    return None
+            return decoded
         except UnicodeDecodeError:
             continue
     return None
@@ -292,12 +302,18 @@ def parse_pptx(payload: bytes) -> ParsedDocument | None:
     for index, slide in enumerate(presentation.slides, start=1):
         lines: list[str] = []
         for shape in slide.shapes:
-            if not shape.has_text_frame:
-                continue
-            for paragraph in shape.text_frame.paragraphs:
-                line = "".join(run.text for run in paragraph.runs).strip()
-                if line:
-                    lines.append(line)
+            if shape.has_text_frame:
+                for paragraph in shape.text_frame.paragraphs:
+                    line = "".join(run.text for run in paragraph.runs).strip()
+                    if line:
+                        lines.append(line)
+            # PowerPoint tables are represented as table shapes, not text
+            # frames, and were silently skipped by the previous parser.
+            if getattr(shape, "has_table", False):
+                for row in shape.table.rows:
+                    line = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                    if line:
+                        lines.append(line)
         body = "\n".join(lines).strip()
         if body:
             pages.append(ParsedPage(index, f"Slide {index}\n{body}", "native"))

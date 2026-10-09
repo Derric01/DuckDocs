@@ -105,17 +105,17 @@ class VectorStore:
             logger.exception("Vector indexing failed for %d evidence units", len(evidence_units))
             return 0
 
-    def delete_document(self, document_id: str) -> None:
+    def delete_document(self, document_id: str, *, keep_ids: set[str] | None = None) -> None:
         if not self.available:
             return
         try:
             assert self._collection is not None
             existing = self._collection.get(where={"document_id": document_id})
-            ids = existing.get("ids") or []
+            ids = [evidence_id for evidence_id in (existing.get("ids") or []) if evidence_id not in (keep_ids or set())]
             if ids:
                 self._collection.delete(ids=ids)
         except Exception:
-            return
+            logger.exception("Failed to remove stale vectors (document=%s)", document_id)
 
     def query(
         self,

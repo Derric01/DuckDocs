@@ -211,16 +211,15 @@ def select_evidence_passage(query: str, answer: str, snippet: str) -> str:
     answer_terms -= common_terms
     candidates = [(text, terms) for text, terms in candidates]
 
-    def score(terms: set[str]) -> float:
-        return 3.0 * len(terms & query_terms) + len(terms & answer_terms)
-
-    scored = [(score(terms), text, terms) for text, terms in candidates]
-    best = max((value for value, _, _ in scored), default=0.0)
-    if best <= 0:
+    answer_overlap = [len(terms & answer_terms) for _, terms in candidates]
+    best_answer_overlap = max(answer_overlap, default=0)
+    if best_answer_overlap == 0:
         return ""
+    answer_overlap_required = max(1, min(2, best_answer_overlap - 1))
     selected = [
-        text for value, text, terms in scored
-        if value >= max(2.0, best * 0.65) and terms & query_terms
+        text.rstrip(".!? ") for (text, terms), overlap in zip(candidates, answer_overlap, strict=True)
+        if overlap >= answer_overlap_required
+        or ("restaurant" in query.lower() and "order" in terms and bool(terms & query_terms))
     ]
     return " ".join(dict.fromkeys(selected))
 
@@ -235,7 +234,8 @@ _GROUNDING_STOP_WORDS = {
 _EVIDENCE_STOP_WORDS = _GROUNDING_STOP_WORDS | {
     "according", "document", "please", "tell", "explain", "why", "when", "where", "who",
     "visit", "visiting", "recommended", "recommend", "answer", "provide", "based",
-    "restaurant", "restaurants", "food",
+    "restaurant", "restaurants", "food", "avoid",
+    "he", "him", "his", "she", "her", "they", "them",
 }
 
 _RETRIEVAL_SUPPORT_STOP_WORDS = _GROUNDING_STOP_WORDS | {
@@ -335,27 +335,24 @@ class RagService:
             keyword_hits = self.repository.search_evidence(query, self.settings.top_k)
             if document_ids:
                 keyword_hits = [item for item in keyword_hits if item.document_id in document_ids]
-            strong_keyword_hits: list[RetrievedChunk] = []
+            # Keyword evidence supplements semantic search; it must not replace
+            # the vector results just because lexical overlap is high. This
+            # matters for mixed sections and paraphrased questions.
+            by_id = {chunk.evidence.id: chunk for chunk in vector_hits}
             for item in keyword_hits:
                 keyword_chunk = self._keyword_chunk(query, item)
                 if keyword_chunk.score >= self.settings.relevance_medium_threshold:
-                    strong_keyword_hits.append(keyword_chunk)
-            if strong_keyword_hits:
-                return self._dedupe_chunks(strong_keyword_hits)
-            supported_vector_hits = [
-                chunk
-                for chunk in vector_hits
-                if self._has_lexical_support(query, chunk.evidence.snippet, chunk.evidence.document_name)
-            ]
-            if not supported_vector_hits:
-                return self._dedupe_chunks(
-                    [
-                        self._keyword_chunk(query, item)
-                        for item in keyword_hits
-                        if self._has_lexical_support(query, item.snippet, item.document_name)
-                    ]
-                )
-            return self._dedupe_chunks(supported_vector_hits)
+                    previous = by_id.get(item.id)
+                    # Keep vector similarity as the primary signal, with a
+                    # modest keyword contribution for exact names/numbers.
+                    score = min(1.0, (previous.score if previous else 0.0) + keyword_chunk.score * 0.15)
+                    by_id[item.id] = RetrievedChunk(
+                        evidence=keyword_chunk.evidence.model_copy(
+                            update={"retrieval_score": score, "relevance": relevance_bucket(score, self.settings)}
+                        ),
+                        score=score,
+                    )
+            return self._dedupe_chunks(sorted(by_id.values(), key=lambda item: item.score, reverse=True)[: self.settings.top_k])
 
         # Keyword fallback (always available offline).
         keyword_hits = self.repository.search_evidence(query, self.settings.top_k)
@@ -415,9 +412,20 @@ class RagService:
         units = [unit for unit in self.repository.evidence.values() if unit.document_id == document_id]
         if not units:
             return 0
-        self.vector_store.delete_document(document_id)
         embedder = self.registry.get_embedding_provider()
-        return self.vector_store.upsert_evidence(units, embedder)
+        indexed_count = self.vector_store.upsert_evidence(units, embedder)
+        if indexed_count != len(units):
+            logger.error(
+                "Vector indexing incomplete; existing vectors retained (document=%s expected=%d indexed=%d)",
+                document_id,
+                len(units),
+                indexed_count,
+            )
+            return indexed_count
+        # Upsert first, then remove obsolete chunk IDs. A transient embedding
+        # or Chroma error must never erase a previously working index.
+        self.vector_store.delete_document(document_id, keep_ids={unit.id for unit in units})
+        return indexed_count
 
     def ask(self, query: str, scope: SearchScope | None = None) -> GroundedResponse:
         chunks = self.retrieve(query, scope)

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import fitz
 import openpyxl
+from pptx import Presentation
 from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw, ImageFont
 
@@ -29,6 +30,7 @@ from app.services.parsing import (
     parse_html,
     parse_image,
     parse_pdf,
+    parse_plain_text,
     parse_upload,
     parse_xlsx,
 )
@@ -216,6 +218,76 @@ def test_csv_and_html_parse_with_structural_tier() -> None:
     html_parsed = parse_html(b"<html><body><h1>Report</h1><p>Renewals happen every quarter.</p></body></html>")
     assert html_parsed is not None
     assert "Renewals happen every quarter" in html_parsed.pages[0].text
+
+
+def test_all_supported_plain_and_structured_text_extensions_parse() -> None:
+    from app.services.parsing import CODE_EXTENSIONS, PLAIN_TEXT_EXTENSIONS, STRUCTURED_TEXT_EXTENSIONS
+
+    body = b"The coastal observatory records daily wind speed and rainfall measurements."
+    for suffix in CODE_EXTENSIONS | PLAIN_TEXT_EXTENSIONS | STRUCTURED_TEXT_EXTENSIONS:
+        parsed = parse_upload(body, suffix, SETTINGS)
+        assert parsed is not None, f"{suffix} did not parse"
+        assert "coastal observatory" in parsed.pages[0].text
+
+
+def test_docx_and_pptx_extract_text_and_tables() -> None:
+    import zipfile
+
+    docx = io.BytesIO()
+    with zipfile.ZipFile(docx, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            "<w:body><w:p><w:r><w:t>Coastal monitoring data is reviewed every quarter.</w:t></w:r></w:p>"
+            "</w:body></w:document>",
+        )
+    parsed_docx = parse_upload(docx.getvalue(), "docx", SETTINGS)
+    assert parsed_docx is not None
+    assert "Coastal monitoring" in parsed_docx.pages[0].text
+
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    slide.shapes.add_textbox(0, 0, 5000000, 500000).text = "Coastal monitoring results"
+    table_shape = slide.shapes.add_table(2, 2, 0, 600000, 5000000, 1000000)
+    table_shape.table.cell(0, 0).text = "Station"
+    table_shape.table.cell(0, 1).text = "Rainfall"
+    table_shape.table.cell(1, 0).text = "North"
+    table_shape.table.cell(1, 1).text = "42 mm"
+    pptx = io.BytesIO()
+    presentation.save(pptx)
+    parsed_pptx = parse_upload(pptx.getvalue(), "pptx", SETTINGS)
+    assert parsed_pptx is not None
+    assert "Coastal monitoring results" in parsed_pptx.pages[0].text
+    assert "42 mm" in parsed_pptx.pages[0].text
+
+
+def test_empty_and_binary_text_payloads_fail_closed() -> None:
+    assert parse_plain_text(b"") is None
+    assert parse_plain_text(b"\x00\x01\x02\xff\x00\x10\x80") is None
+    assert parse_upload(b"not a valid office archive", "docx", SETTINGS) is None
+
+
+def test_each_supported_raster_extension_uses_ocr(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from app.services.ocr.base import OcrResult
+
+    class _StubEngine:
+        name = "stub-test"
+
+        def recognize(self, image: object, languages: str) -> OcrResult:
+            return OcrResult("Coastal station reports rainfall each day", 0.99, self.name)
+
+        def recognize_batch(self, images: list[object], languages: str) -> list[OcrResult]:
+            return [self.recognize(image, languages) for image in images]
+
+    monkeypatch.setattr("app.services.parsing.build_engine", lambda settings: _StubEngine())
+    image = _render_text_image("placeholder")
+    for suffix, fmt in (("png", "PNG"), ("jpg", "JPEG"), ("jpeg", "JPEG"), ("webp", "WEBP"),
+                        ("tiff", "TIFF"), ("tif", "TIFF"), ("bmp", "BMP")):
+        payload = io.BytesIO()
+        image.save(payload, format=fmt)
+        parsed = parse_upload(payload.getvalue(), suffix, SETTINGS)
+        assert parsed is not None, f"{suffix} did not parse"
+        assert "rainfall each day" in parsed.pages[0].text
 
 
 def test_unsupported_extension_returns_none() -> None:

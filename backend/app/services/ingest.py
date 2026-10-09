@@ -184,6 +184,12 @@ async def _run_pipeline(
     parsed = await asyncio.to_thread(parse_upload, payload, suffix, runtime, on_page)
 
     if parsed is None or not parsed.pages:
+        logger.warning(
+            "Document extraction produced no usable pages (document=%s suffix=%s bytes=%d)",
+            document_id,
+            suffix,
+            len(payload),
+        )
         repo.update_job(
             job_id,
             status="failed",
@@ -201,6 +207,29 @@ async def _run_pipeline(
     repo.update_job(job_id, status="processing", stage="chunking", progress_pct=62)
     anchor_quality = anchor_quality_for(suffix, parsed)
     chunks = await asyncio.to_thread(chunk_document, parsed, runtime, anchor_quality)
+    logger.info(
+        "Document parsed and chunked (document=%s suffix=%s pages=%d chunks=%d fidelity=%s)",
+        document_id,
+        suffix,
+        parsed.page_count,
+        len(chunks),
+        parsed.fidelity_tier,
+    )
+    if not chunks:
+        logger.warning("Document extraction yielded no indexable chunks (document=%s suffix=%s)", document_id, suffix)
+        repo.update_job(
+            job_id,
+            status="failed",
+            stage="failed",
+            progress_pct=100,
+            error={
+                "stage": "chunking",
+                "reason_code": "no_indexable_content",
+                "human_message": "DuckDocs extracted text but could not create searchable passages from it.",
+            },
+        )
+        repo.update_document(document_id, status="review")
+        return
 
     repo.update_job(job_id, status="processing", stage="summarizing", progress_pct=72)
     summary = await build_document_summary(parsed, document_id, repo, rag, runtime)
@@ -210,7 +239,20 @@ async def _run_pipeline(
 
     if indexed_count:
         repo.update_job(job_id, status="processing", stage="indexing", progress_pct=92)
-        await asyncio.to_thread(rag.index_document, document_id)
+        vector_count = await asyncio.to_thread(rag.index_document, document_id)
+        logger.info(
+            "Document evidence indexed (document=%s evidence_units=%d vectors=%d)",
+            document_id,
+            indexed_count,
+            vector_count,
+        )
+        if vector_count != indexed_count:
+            logger.warning(
+                "Vector index is incomplete; keyword retrieval remains available (document=%s evidence_units=%d vectors=%d)",
+                document_id,
+                indexed_count,
+                vector_count,
+            )
 
     # Keep the larger of the probed and parsed counts: a parser may skip pages
     # it found nothing on, but those pages exist and are still previewable.
