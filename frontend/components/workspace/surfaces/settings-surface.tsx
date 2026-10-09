@@ -58,7 +58,7 @@ export function SettingsSurface() {
       await duckDocsApi.createProviderConfig({
         role: 'chat',
         providerType: 'ollama',
-        modelName: 'llama3.2:1b',
+        modelName: 'mistral',
         baseUrl: 'http://ollama:11434',
         isDefault: true,
       });
