@@ -86,6 +86,8 @@ def grade(case, resp):
     if refused:
         return "FAIL", "NO", shown
     cite_ok = "yes" if matches_all(case.get("cite", case["must"]), snippets) else "NO"
+    if cite_ok == "NO":
+        return "FAIL", cite_ok, shown
     if not matches_all(case["must"], answer):
         return "FAIL", cite_ok, shown
     if any(re.search(p, answer, re.IGNORECASE) for p in case.get("must_not", [])):
@@ -117,7 +119,11 @@ def main():
             resp = ask(args.url, case["q"], args.timeout)
             result, cited, shown = grade(case, resp)
             chunks = resp.get("retrieved_chunk_count", "?")
-            provider = str(resp.get("provider", ""))
+            provider_info = resp.get("provider") or {}
+            if isinstance(provider_info, dict):
+                provider = f"{provider_info.get('name', '')} {provider_info.get('model', '')}".strip()
+            else:
+                provider = str(provider_info)
             raw[case["id"]] = resp
         except urllib.error.HTTPError as err:
             result, cited = "FAIL", "n/a"
