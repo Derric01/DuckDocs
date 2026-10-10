@@ -155,6 +155,32 @@ def test_scanned_filename_query_retrieves_sparse_ocr_document() -> None:
     assert chunks[0].evidence.document_name == "02-scanned-ocr.pdf"
 
 
+def test_reciprocal_rank_fusion_keeps_keyword_only_hit() -> None:
+    vector_evidence = _evidence("ev_vector", "notes.md", "A semantic reference to the requested topic.")
+    keyword_evidence = _evidence("ev_keyword", "13-config.yaml", "YAML config file marker: YAML-MARKER-2d9b")
+    service = _service([vector_evidence, keyword_evidence])
+    service.vector_store.query = lambda *args, **kwargs: [RetrievedChunk(vector_evidence, 0.9)]  # type: ignore[method-assign]
+
+    chunks = service.retrieve("What is the marker value in the YAML config file?")
+
+    assert {chunk.evidence.id for chunk in chunks} == {"ev_vector", "ev_keyword"}
+
+
+def test_document_hints_reject_wrong_format_and_page_citations() -> None:
+    service = _service(
+        [
+            _evidence("ev_yaml", "13-config.yaml", "YAML config file marker: YAML-MARKER-2d9b"),
+            _evidence("ev_markdown", "12-notes.md", "Marker: MD-MARKER-8e41"),
+        ]
+    )
+    yaml_chunks = service.retrieve("What's the marker value in the YAML config file?")
+    assert yaml_chunks[0].evidence.document_name == "13-config.yaml"
+
+    service = _service([_evidence("ev_scanned", "03-scanned-multipage.pdf", "Page marker: SCAN-PAGE-2-b82e")])
+    response = service.ask("What is the marker on page 2 of the scanned multi-page document?")
+    assert response.outcome == "insufficient_evidence"
+
+
 def test_revenue_sum_is_grounded_as_synthesized_answer() -> None:
     service = _service(
         [

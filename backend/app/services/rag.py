@@ -67,6 +67,7 @@ class GroundingGate:
         task: str = "ask",
         evidence_by_id: dict[str, str] | None = None,
         query: str | None = None,
+        evidence_metadata: dict[str, Evidence] | None = None,
     ) -> GateResult:
         stripped = raw_output.strip()
         if stripped == "INSUFFICIENT_EVIDENCE" or stripped.startswith("INSUFFICIENT_EVIDENCE"):
@@ -79,7 +80,7 @@ class GroundingGate:
                 if evidence_id not in allowed_chunk_ids or not evidence_by_id:
                     continue
                 source = evidence_by_id.get(evidence_id, "")
-                if _quote_matches(quote, source):
+                if _evidence_matches_query_hints(query, evidence_metadata, evidence_id) and _quote_matches(quote, source):
                     verified.append((claim, evidence_id))
             if not verified:
                 return GateResult(
@@ -98,6 +99,11 @@ class GroundingGate:
         simple = _parse_simple_answer(stripped)
         if simple is not None:
             answer, cited_ids = simple
+            cited_ids = [
+                evidence_id
+                for evidence_id in cited_ids
+                if _evidence_matches_query_hints(query, evidence_metadata, evidence_id)
+            ]
             if (
                 not answer
                 or not cited_ids
@@ -153,6 +159,11 @@ class GroundingGate:
             )
 
         cited_ids = [canonical_ids[cited_id] for cited_id in cited_ids]
+        cited_ids = [
+            evidence_id
+            for evidence_id in cited_ids
+            if _evidence_matches_query_hints(query, evidence_metadata, evidence_id)
+        ]
 
         if task == "ask" and cited_ids:
             sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", stripped) if part.strip()]
@@ -239,6 +250,42 @@ def _parse_simple_answer(raw_output: str) -> tuple[str, list[str]] | None:
         return None
     normalized_ids = [str(value).strip() for value in evidence_ids if isinstance(value, (int, str))]
     return payload["answer"].strip(), [value for value in normalized_ids if value]
+
+
+def _evidence_matches_query_hints(
+    query: str | None,
+    evidence_metadata: dict[str, Evidence] | None,
+    evidence_id: str,
+) -> bool:
+    if not query or not evidence_metadata:
+        return True
+    evidence = evidence_metadata.get(evidence_id)
+    if evidence is None:
+        return True
+    lowered = query.lower()
+    name = evidence.document_name.lower()
+    extension = name.rsplit(".", 1)[-1] if "." in name else ""
+    if "yaml" in lowered and extension not in {"yaml", "yml"}:
+        return False
+    if "xml" in lowered and extension != "xml":
+        return False
+    if "spreadsheet" in lowered and extension not in {"xlsx", "xls", "csv"}:
+        return False
+    if "presentation" in lowered and extension not in {"pptx", "ppt"}:
+        return False
+    if "word document" in lowered and extension not in {"docx", "doc"}:
+        return False
+    if "native text pdf" in lowered and (extension != "pdf" or evidence.fidelity_tier == "ocr_dependent"):
+        return False
+    if "scanned" in lowered and evidence.ocr_confidence is None:
+        return False
+    page_match = re.search(r"\bpage\s+(\d+)\b", lowered)
+    if page_match and evidence.page != int(page_match.group(1)):
+        return False
+    slide_match = re.search(r"\bslide\s+(\d+)\b", lowered)
+    if slide_match and (extension not in {"pptx", "ppt"} or evidence.page != int(slide_match.group(1))):
+        return False
+    return True
 
 
 def _quote_matches(quote: str, source: str) -> bool:
@@ -502,40 +549,86 @@ class RagService:
             min_similarity=self.settings.min_similarity,
             document_ids=document_ids,
         )
-        if vector_hits:
-            keyword_hits = self.repository.search_evidence(query, self.settings.top_k)
-            if document_ids:
-                keyword_hits = [item for item in keyword_hits if item.document_id in document_ids]
-            # Keyword evidence supplements semantic search; it must not replace
-            # the vector results just because lexical overlap is high. This
-            # matters for mixed sections and paraphrased questions.
-            by_id = {chunk.evidence.id: chunk for chunk in vector_hits}
-            for item in keyword_hits:
-                keyword_chunk = self._keyword_chunk(query, item)
-                if keyword_chunk.score >= self.settings.relevance_medium_threshold:
-                    previous = by_id.get(item.id)
-                    # Keep vector similarity as the primary signal, with a
-                    # modest keyword contribution for exact names/numbers.
-                    score = min(1.0, (previous.score if previous else 0.0) + keyword_chunk.score * 0.15)
-                    by_id[item.id] = RetrievedChunk(
-                        evidence=keyword_chunk.evidence.model_copy(
-                            update={"retrieval_score": score, "relevance": relevance_bucket(score, self.settings)}
-                        ),
-                        score=score,
-                    )
-            return self._dedupe_chunks(sorted(by_id.values(), key=lambda item: item.score, reverse=True)[: self.settings.top_k])
-
-        # Keyword fallback (always available offline).
         keyword_hits = self.repository.search_evidence(query, self.settings.top_k)
         if document_ids:
             keyword_hits = [item for item in keyword_hits if item.document_id in document_ids]
-        return self._dedupe_chunks(
-            [
-                self._keyword_chunk(query, item)
-                for item in keyword_hits
-                if self._has_lexical_support(query, item.snippet, item.document_name)
-            ]
+        keyword_chunks = [
+            self._keyword_chunk(query, item)
+            for item in keyword_hits
+            if self._has_lexical_support(query, item.snippet, item.document_name)
+        ]
+        vector_rank = {chunk.evidence.id: rank for rank, chunk in enumerate(vector_hits, start=1)}
+        keyword_rank = {chunk.evidence.id: rank for rank, chunk in enumerate(keyword_chunks, start=1)}
+        by_id = {chunk.evidence.id: chunk for chunk in vector_hits}
+        by_id.update({chunk.evidence.id: chunk for chunk in keyword_chunks})
+        rrf_k = 60.0
+        max_rrf = 1.0 / (rrf_k + 1)
+        ranked: list[RetrievedChunk] = []
+        for evidence_id, chunk in by_id.items():
+            fused = sum(
+                1.0 / (rrf_k + rank)
+                for rank in (vector_rank.get(evidence_id), keyword_rank.get(evidence_id))
+                if rank is not None
+            )
+            hint_boost = self._query_hint_boost(query, chunk.evidence)
+            score = min(1.0, (fused / max_rrf) * hint_boost)
+            ranked.append(
+                RetrievedChunk(
+                    evidence=chunk.evidence.model_copy(
+                        update={"retrieval_score": score, "relevance": relevance_bucket(score, self.settings)}
+                    ),
+                    score=score,
+                )
+            )
+        result = self._dedupe_chunks(sorted(ranked, key=lambda item: item.score, reverse=True)[: self.settings.top_k])
+        if self.settings.reranker == "lexical":
+            result.sort(key=lambda item: (self._keyword_chunk(query, item.evidence).score, item.score), reverse=True)
+        logger.debug(
+            "retrieval_top5=%s",
+            [(chunk.evidence.document_name, round(chunk.score, 4)) for chunk in result[:5]],
         )
+        return result
+
+    @staticmethod
+    def _query_hint_boost(query: str, evidence: Evidence) -> float:
+        lowered = query.lower()
+        name = evidence.document_name.lower()
+        boost = 1.0
+        if "native text" in lowered and "native" in name:
+            boost += 0.2
+        if "scanned" in lowered and "scanned" in name:
+            boost += 0.1
+        if "ocr" in lowered and "ocr" in name:
+            boost += 0.1
+        if "multi-page" in lowered and "multipage" in name:
+            boost += 0.1
+        for extension, words in {
+            "pdf": ("pdf",),
+            "docx": ("word document",),
+            "xlsx": ("spreadsheet",),
+            "csv": ("spreadsheet", "csv"),
+            "pptx": ("presentation",),
+            "yaml": ("yaml",),
+            "yml": ("yaml",),
+            "xml": ("xml",),
+        }.items():
+            if any(word in lowered for word in words) and name.endswith(f".{extension}"):
+                boost += 0.15
+        page_match = re.search(r"\bpage\s+(\d+)\b", lowered)
+        if page_match and evidence.page == int(page_match.group(1)):
+            boost += 0.25
+        slide_match = re.search(r"\bslide\s+(\d+)\b", lowered)
+        if slide_match and evidence.page == int(slide_match.group(1)) and name.rsplit(".", 1)[-1] in {"pptx", "ppt"}:
+            boost += 0.25
+        return boost
+
+    @classmethod
+    def _prioritize_hint_chunks(cls, query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+        hinted = [chunk for chunk in chunks if _evidence_matches_query_hints(query, {chunk.evidence.id: chunk.evidence}, chunk.evidence.id)]
+        if not hinted or len(hinted) == len(chunks):
+            return chunks
+        hinted_ids = {chunk.evidence.id for chunk in hinted}
+        return hinted + [chunk for chunk in chunks if chunk.evidence.id not in hinted_ids]
 
     @staticmethod
     def _has_lexical_support(query: str, snippet: str, document_name: str = "") -> bool:
@@ -627,6 +720,7 @@ class RagService:
                 refusal_reason="insufficient_evidence",
                 diagnostic={"top_score": 0.0, "threshold": self.settings.min_similarity},
             )
+        chunks = self._prioritize_hint_chunks(query, chunks)
 
         stage_started = perf_counter()
         prompt = build_ask_prompt(
@@ -660,8 +754,19 @@ class RagService:
             str(index): chunk.evidence.snippet
             for index, chunk in enumerate(chunks[: self.settings.ask_max_chunks], start=1)
         }
+        evidence_metadata = {
+            str(index): chunk.evidence
+            for index, chunk in enumerate(chunks[: self.settings.ask_max_chunks], start=1)
+        }
         stage_started = perf_counter()
-        gate = self.gate.validate(raw_text, allowed, task="ask", evidence_by_id=evidence_by_id, query=query)
+        gate = self.gate.validate(
+            raw_text,
+            allowed,
+            task="ask",
+            evidence_by_id=evidence_by_id,
+            query=query,
+            evidence_metadata=evidence_metadata,
+        )
         _log_stage("verification", stage_started, outcome=gate.outcome, reason=gate.reason or "none")
 
         for retry in range(max(0, self.settings.ask_retries)) if chat.ref["provider_type"] == "ollama" else ():
@@ -680,7 +785,12 @@ class RagService:
                 corrected_text = corrected if isinstance(corrected, str) else "".join(corrected)
                 stage_started = perf_counter()
                 gate = self.gate.validate(
-                    corrected_text, allowed, task="ask", evidence_by_id=evidence_by_id, query=query
+                    corrected_text,
+                    allowed,
+                    task="ask",
+                    evidence_by_id=evidence_by_id,
+                    query=query,
+                    evidence_metadata=evidence_metadata,
                 )
                 _log_stage("verification", stage_started, attempt=retry + 2, outcome=gate.outcome, reason=gate.reason or "none")
                 if gate.outcome == "grounded":
@@ -717,7 +827,14 @@ class RagService:
             _log_stage("fallback", stage_started, provider=extractive.ref["provider_type"])
             raw_text = raw if isinstance(raw, str) else "".join(raw)
             stage_started = perf_counter()
-            gate = self.gate.validate(raw_text, allowed, task="ask", evidence_by_id=evidence_by_id, query=query)
+            gate = self.gate.validate(
+                raw_text,
+                allowed,
+                task="ask",
+                evidence_by_id=evidence_by_id,
+                query=query,
+                evidence_metadata=evidence_metadata,
+            )
             _log_stage("verification", stage_started, attempt="fallback", outcome=gate.outcome, reason=gate.reason or "none")
 
         if gate.outcome != "grounded" or gate.text is None:

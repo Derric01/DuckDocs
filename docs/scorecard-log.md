@@ -81,6 +81,65 @@ result, while retaining both measurements because the 1B model can vary.
 **Aggregate:** 2 PASS, 3 PARTIAL, 8 FAIL; 0 passing answers with a
 wrong/missing citation.
 
+## Phase 4 retrieval and query-hint run
+
+Phase 4 uses reciprocal rank fusion (RRF) for vector and keyword results.
+Keyword-only results remain eligible when vector results exist, and vector
+`min_similarity` filtering occurs before fusion. Generic query hints boost or
+validate file formats and page/slide metadata. OCR page numbering was verified
+against the existing parser remapping and required no parser change. The
+optional built-in lexical reranker remains disabled by default
+(`DUCKDOCS_RERANKER=off`); no additional model or dependency was added.
+
+The backend image was rebuilt before each run. Both runs below were made with
+the stack idle and produced identical results:
+
+| Question | Result | Cited | Sources | Provider | Chunks | Seconds | Answer start |
+|---:|---|---|---|---|---:|---:|---|
+| 1 | FAIL | NO | n/a | extractive evidence_synth | 12 | 3 | [refused: citation_density_low] |
+| 2 | FAIL | yes | 02-scanned-ocr.pdf, 03-scanned-multipage.pdf | ollama llama3.2:1b | 12 | 3 | The test marker in the scanned OCR PDF is SCAN-PDF-9d1c |
+| 3 | PASS | yes | Kyoto_Japan_itinerary.pdf | ollama llama3.2:1b | 12 | 3 | The annual average high temperature in Kyoto is 21.0°C |
+| 4 | PASS | yes | 03-scanned-multipage.pdf | extractive evidence_synth | 12 | 3 | Page marker:SCAN-PAGE-2-b82e Use this file to test DUCK |
+| 5 | FAIL | yes | 08-presentation.pptx | ollama llama3.2:1b | 11 | 2 | Slide 3. |
+| 6 | FAIL | NO | 06-document.docx | extractive evidence_synth | 11 | 2 | DuckDocs Test File - Word Document This DOCX tests para |
+| 7 | PASS | yes | 07-spreadsheet.xlsx | extractive evidence_synth | 12 | 3 | Sheet: Inventory SKU \| Item \| Stock A-100 \| Widget A \| |
+| 8 | FAIL | yes | 07-spreadsheet.xlsx | extractive evidence_synth | 12 | 2 | Sheet: Sales Month \| Revenue \| Units Jan \| 12000 \| 340 |
+| 9 | PARTIAL | yes | 09-data.csv | extractive evidence_synth | 11 | 3 | id \| name \| department \| salary 1 \| Asha Rao \| Engineer |
+| 10 | PARTIAL | yes | 13-config.yaml | extractive evidence_synth | 12 | 2 | test_file: 13-config.yaml purpose: structured extractio |
+| 11 | FAIL | NO | n/a | extractive evidence_synth | 11 | 2 | [refused: citation_density_low] |
+| 12 | FAIL | n/a | 12-notes.md | extractive evidence_synth | 11 | 3 | # DuckDocs Test File - Markdown This tests plain text/m |
+| 13 | FAIL | n/a | 12-notes.md | extractive evidence_synth | 11 | 3 | # DuckDocs Test File - Markdown This tests plain text/m |
+
+**Each run aggregate:** 3 PASS, 2 PARTIAL, 8 FAIL; 0 passing answers had a
+wrong or missing citation. The source column reports every citation returned
+by the API, including a mismatched neighboring source; the scorecard's
+measurement-only expected-source check therefore correctly marks Q2 as FAIL.
+
+### Top-five retrieval measurement
+
+Scores below are the post-fusion scores logged at DEBUG, showing document name
+and score only. Duplicate names represent distinct evidence units/pages.
+
+| Q | Top five documents and scores |
+|---:|---|
+| 1 | 12-notes.md 1.000; 02-scanned-ocr.pdf 1.000; 11-page.html 1.000; 08-presentation.pptx 1.000; 03-scanned-multipage.pdf 1.000 |
+| 2 | 02-scanned-ocr.pdf 1.000; 03-scanned-multipage.pdf 1.000; 03-scanned-multipage.pdf 1.000; 03-scanned-multipage.pdf 1.000; 04-image-text.png 1.000 |
+| 3 | Kyoto_Japan_itinerary.pdf 1.000; Kyoto_Japan_itinerary.pdf 0.984; Kyoto_Japan_itinerary.pdf 0.968; Kyoto_Japan_itinerary.pdf 0.953; Kyoto_Japan_itinerary.pdf 0.938 |
+| 4 | 03-scanned-multipage.pdf 1.000; 03-scanned-multipage.pdf 1.000; 03-scanned-multipage.pdf 1.000; 02-scanned-ocr.pdf 1.000; 08-presentation.pptx 1.000 |
+| 5 | 08-presentation.pptx 1.000; 08-presentation.pptx 1.000; 03-scanned-multipage.pdf 1.000; 03-scanned-multipage.pdf 1.000; 03-scanned-multipage.pdf 1.000 |
+| 6 | 06-document.docx 1.000; 06-document.docx 1.000; 03-scanned-multipage.pdf 0.968; 03-scanned-multipage.pdf 0.953; 03-scanned-multipage.pdf 0.938 |
+| 7 | 07-spreadsheet.xlsx 1.000; 06-document.docx 0.984; 13-config.yaml 0.968; 07-spreadsheet.xlsx 0.953; 14-data.xml 0.938 |
+| 8 | 07-spreadsheet.xlsx 1.000; 07-spreadsheet.xlsx 1.000; 09-data.csv 1.000; 02-scanned-ocr.pdf 0.953; Kyoto_Japan_itinerary.pdf 0.938 |
+| 9 | 09-data.csv 1.000; 12-notes.md 0.984; 13-config.yaml 0.968; 07-spreadsheet.xlsx 0.953; 02-scanned-ocr.pdf 0.938 |
+| 10 | 13-config.yaml 1.000; 12-notes.md 1.000; 11-page.html 1.000; 03-scanned-multipage.pdf 1.000; 03-scanned-multipage.pdf 1.000 |
+| 11 | 14-data.xml 1.000; 06-document.docx 1.000; 07-spreadsheet.xlsx 0.984; 13-config.yaml 0.968; 12-notes.md 0.938 |
+| 12 | Kyoto_Japan_itinerary.pdf 1.000; Kyoto_Japan_itinerary.pdf 0.984; 12-notes.md 0.968; Kyoto_Japan_itinerary.pdf 0.953; Kyoto_Japan_itinerary.pdf 0.938 |
+| 13 | 14-data.xml 1.000; 12-notes.md 0.984; 09-data.csv 0.968; 13-config.yaml 0.953; Kyoto_Japan_itinerary.pdf 0.938 |
+
+The remaining Q1/Q11 citation-density refusals and Q5 short answer are
+grounding/output-quality issues for later phases; this phase did not weaken
+the fail-closed gate.
+
 ## Phase 2b structured-answer diagnosis and result
 
 The throwaway diagnostic ran the same retrieval, prompt construction, and Ollama

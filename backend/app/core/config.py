@@ -47,6 +47,7 @@ class Settings:
     ask_chunk_max_chars: int = 1200
     ask_retries: int = 0
     ollama_keep_alive: str = "10m"
+    reranker: str = "off"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -87,6 +88,7 @@ class Settings:
             ask_chunk_max_chars=int(os.getenv("DUCKDOCS_ASK_CHUNK_MAX_CHARS", "1200")),
             ask_retries=int(os.getenv("DUCKDOCS_ASK_RETRIES", "0")),
             ollama_keep_alive=os.getenv("OLLAMA_KEEP_ALIVE", "10m"),
+            reranker=os.getenv("DUCKDOCS_RERANKER", "off").strip().lower(),
         )
 
 
