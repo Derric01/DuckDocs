@@ -11,6 +11,7 @@ docs/33_ERROR_HANDLING.md.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from uuid import uuid4
@@ -28,8 +29,17 @@ from app.core.errors import DuckDocsError, duckdocs_error_handler
 from app.services.ingest import reconcile_orphaned_jobs
 from app.services.preview import clear_preview_cache
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+logging.basicConfig(
+    level=getattr(logging, os.getenv("DUCKDOCS_LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+_log_level = getattr(logging, os.getenv("DUCKDOCS_LOG_LEVEL", "INFO").upper(), logging.INFO)
+logging.getLogger().setLevel(_log_level)
+for _handler in logging.getLogger().handlers:
+    _handler.setLevel(_log_level)
 logger = logging.getLogger("duckdocs")
+logger.setLevel(_log_level)
+logging.getLogger("duckdocs.rag").setLevel(logger.level)
 
 
 @asynccontextmanager

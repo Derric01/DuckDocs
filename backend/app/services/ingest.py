@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
+from time import perf_counter
 
 from app.core.config import Settings
 from app.domain.models import IngestJob
@@ -110,7 +111,9 @@ async def build_document_summary(
     document = repo.get_document(document_id)
     prompt = build_summary_prompt(document.name if document else "Untitled", parsed)
     try:
+        started = perf_counter()
         raw = await asyncio.to_thread(chat.generate, prompt, stream=False)
+        logger.debug("summary_model_call duration_ms=%.1f", (perf_counter() - started) * 1000)
     except Exception:
         logger.info("Model summary failed for %s; keeping the extractive summary", document_id)
         return baseline

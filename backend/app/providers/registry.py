@@ -210,6 +210,10 @@ class ProviderRegistry:
                     base_url=config.base_url or self.settings.ollama_base_url,
                     model_name=config.model_name or self.settings.chat_model,
                     config_id=config.id,
+                    num_predict=self.settings.ask_num_predict,
+                    num_ctx=self.settings.ask_num_ctx,
+                    timeout_seconds=self.settings.ask_timeout_seconds,
+                    keep_alive=self.settings.ollama_keep_alive,
                 )
             if config.provider_type == "extractive":
                 return ExtractiveChatAdapter(config_id=config.id)

@@ -32,7 +32,7 @@ async def search(request: SearchRequest, rag: RagDep, registry: RegistryDep) -> 
 
 @router.post("/ask", response_model=GroundedResponse)
 async def ask(request: AskRequest, rag: RagDep) -> GroundedResponse:
-    return rag.ask(request.query, request.scope)
+    return await asyncio.to_thread(rag.ask, request.query, request.scope)
 
 
 @router.post("/ask/stream")

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import json
+import os
 import re
+from time import perf_counter
 from collections.abc import Iterator
 from dataclasses import dataclass
 from itertools import combinations
@@ -20,6 +22,12 @@ from app.services.vector_store import RetrievedChunk, VectorStore, relevance_buc
 
 CITATION_RE = re.compile(r"\[chunk:([^\]]+)\]")
 logger = logging.getLogger("duckdocs.rag")
+logger.setLevel(getattr(logging, os.getenv("DUCKDOCS_LOG_LEVEL", "INFO").upper(), logging.INFO))
+if os.getenv("DUCKDOCS_LOG_LEVEL", "INFO").upper() == "DEBUG" and not logger.handlers:
+    _timing_handler = logging.StreamHandler()
+    _timing_handler.setLevel(logging.DEBUG)
+    logger.addHandler(_timing_handler)
+    logger.propagate = False
 
 
 def _generate_chat(chat: object, prompt: str) -> Iterator[str] | str:
@@ -27,6 +35,12 @@ def _generate_chat(chat: object, prompt: str) -> Iterator[str] | str:
     if getattr(chat, "ref", {}).get("provider_type") == "ollama":
         return generate(prompt, stream=False, structured_output=True)
     return generate(prompt, stream=False)
+
+
+def _log_stage(stage: str, started: float, **fields: object) -> None:
+    logger.debug("ask_stage=%s duration_ms=%.1f %s", stage, (perf_counter() - started) * 1000, " ".join(
+        f"{key}={value}" for key, value in fields.items()
+    ))
 
 
 @dataclass(slots=True)
@@ -365,20 +379,37 @@ def _looks_factual(sentence: str) -> bool:
     return any(char.isdigit() for char in sentence) or len(sentence.split()) > 3
 
 
-def build_ask_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
+def build_ask_prompt(
+    query: str,
+    chunks: list[RetrievedChunk],
+    *,
+    max_chunks: int = 6,
+    max_chars: int = 1200,
+    context_window: int = 4096,
+) -> str:
     blocks: list[str] = []
-    for chunk in chunks:
+    for chunk in chunks[:max_chunks]:
+        snippet = chunk.evidence.snippet[:max_chars]
         blocks.append(
-            f"[[chunk:{chunk.evidence.id}]]\n{chunk.evidence.snippet}\n[[/chunk]]"
+            f"[[chunk:{chunk.evidence.id}]]\n{snippet}\n[[/chunk]]"
         )
     context = "\n\n".join(blocks)
-    return (
+    prompt = (
         "Answer only from the provided context.\n"
         "Return a JSON object with a claims array. Each claim must contain "
         "claim, evidence_id, and a short verbatim quote from that evidence.\n"
         "If the context is insufficient, return {\"claims\":[]}.\n\n"
         f"Question: {query}\n\nContext:\n{context}\n\nAnswer:"
     )
+    estimated_tokens = (len(prompt) + 3) // 4
+    logger.debug(
+        "ask_prompt chars=%d estimated_tokens=%d context_window=%d chunks=%d",
+        len(prompt),
+        estimated_tokens,
+        context_window,
+        min(len(chunks), max_chunks),
+    )
+    return prompt
 
 
 def score_confidence(chunks: list[RetrievedChunk], cited_ids: list[str]) -> ConfidenceBreakdown:
@@ -525,7 +556,10 @@ class RagService:
         return indexed_count
 
     def ask(self, query: str, scope: SearchScope | None = None) -> GroundedResponse:
+        total_started = perf_counter()
+        stage_started = perf_counter()
         chunks = self.retrieve(query, scope)
+        _log_stage("retrieval", stage_started, chunks=len(chunks))
         response_id = f"resp_{uuid4().hex[:12]}"
         now = utc_now()
         chat = self.registry.get_chat_provider()
@@ -535,6 +569,7 @@ class RagService:
             "model": chat.ref["model_name"],
         }
         if not chunks:
+            _log_stage("total", total_started, outcome="insufficient_evidence", chunks=0)
             return GroundedResponse(
                 id=response_id,
                 kind="ask",
@@ -550,10 +585,21 @@ class RagService:
                 diagnostic={"top_score": 0.0, "threshold": self.settings.min_similarity},
             )
 
-        prompt = build_ask_prompt(query, chunks)
+        stage_started = perf_counter()
+        prompt = build_ask_prompt(
+            query,
+            chunks,
+            max_chunks=self.settings.ask_max_chunks,
+            max_chars=self.settings.ask_chunk_max_chars,
+            context_window=self.settings.ask_num_ctx,
+        )
+        _log_stage("prompt_build", stage_started)
         try:
+            stage_started = perf_counter()
             raw = _generate_chat(chat, prompt)
+            _log_stage("model_call", stage_started, attempt=1, provider=chat.ref["provider_type"])
         except Exception:
+            _log_stage("model_call", stage_started, attempt=1, provider=chat.ref["provider_type"], failed=True)
             logger.exception("Chat generation failed before grounding gate")
             # Missing model / Ollama failure: fall back to local extractive synthesis.
             from app.providers.extractive import ExtractiveChatAdapter
@@ -568,7 +614,9 @@ class RagService:
         raw_text = raw if isinstance(raw, str) else "".join(raw)
         allowed = {chunk.evidence.id for chunk in chunks}
         evidence_by_id = {chunk.evidence.id: chunk.evidence.snippet for chunk in chunks}
+        stage_started = perf_counter()
         gate = self.gate.validate(raw_text, allowed, task="ask", evidence_by_id=evidence_by_id, query=query)
+        _log_stage("verification", stage_started, outcome=gate.outcome, reason=gate.reason or "none")
 
         if gate.outcome != "grounded" and chat.ref["provider_type"] == "ollama":
             correction_prompt = (
@@ -578,14 +626,19 @@ class RagService:
                 f"Valid chunk IDs are: {', '.join(sorted(allowed))}."
             )
             try:
+                stage_started = perf_counter()
                 corrected = _generate_chat(chat, correction_prompt)
+                _log_stage("model_call", stage_started, attempt=2, provider=chat.ref["provider_type"])
                 corrected_text = corrected if isinstance(corrected, str) else "".join(corrected)
+                stage_started = perf_counter()
                 gate = self.gate.validate(
                     corrected_text, allowed, task="ask", evidence_by_id=evidence_by_id, query=query
                 )
+                _log_stage("verification", stage_started, attempt=2, outcome=gate.outcome, reason=gate.reason or "none")
                 if gate.outcome == "grounded":
                     raw_text = corrected_text
             except Exception:
+                _log_stage("model_call", stage_started, attempt=2, provider=chat.ref["provider_type"], failed=True)
                 logger.exception("Corrective chat generation failed before grounding gate")
 
         # Small local models often answer without [chunk:id] markers. If we already
@@ -599,11 +652,16 @@ class RagService:
                 "name": extractive.ref["provider_type"],
                 "model": extractive.ref["model_name"],
             }
+            stage_started = perf_counter()
             raw = extractive.generate(prompt, stream=False)
+            _log_stage("fallback", stage_started, provider=extractive.ref["provider_type"])
             raw_text = raw if isinstance(raw, str) else "".join(raw)
+            stage_started = perf_counter()
             gate = self.gate.validate(raw_text, allowed, task="ask", evidence_by_id=evidence_by_id, query=query)
+            _log_stage("verification", stage_started, attempt="fallback", outcome=gate.outcome, reason=gate.reason or "none")
 
         if gate.outcome != "grounded" or gate.text is None:
+            _log_stage("total", total_started, outcome="insufficient_evidence", chunks=len(chunks))
             return GroundedResponse(
                 id=response_id,
                 kind="ask",
@@ -622,8 +680,11 @@ class RagService:
                 },
             )
 
+        stage_started = perf_counter()
         citations = self._bind_citations(gate.cited_ids, chunks, query, gate.text or "")
+        _log_stage("citation_binding", stage_started, citations=len(citations))
         if not citations:
+            _log_stage("total", total_started, outcome="insufficient_evidence", chunks=len(chunks))
             return GroundedResponse(
                 id=response_id,
                 kind="ask",
@@ -647,6 +708,7 @@ class RagService:
         cleaned = CITATION_RE.sub("", gate.text)
         cleaned = re.sub(r"\s{2,}", " ", cleaned)
         cleaned = re.sub(r"\s+([.,;:!?])", r"\1", cleaned).strip()
+        _log_stage("total", total_started, outcome="grounded", chunks=len(chunks))
         return GroundedResponse(
             id=response_id,
             kind="ask",

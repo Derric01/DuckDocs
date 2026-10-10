@@ -26,6 +26,15 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    command:
+      - /bin/sh
+      - -c
+      - |
+        case "$${DUCKDOCS_LOG_LEVEL:-INFO}" in
+          DEBUG|debug) level=debug ;;
+          *) level=info ;;
+        esac
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level "$$level"
     ports:
       - "${DUCKDOCS_API_PORT:-8000}:8000"
     environment:
@@ -36,6 +45,8 @@ services:
       DUCKDOCS_LOCAL_MODEL: ${DUCKDOCS_LOCAL_MODEL:-llama3.2:1b}
       DUCKDOCS_CHAT_MODEL: ${DUCKDOCS_CHAT_MODEL:-llama3.2:1b}
       DUCKDOCS_EMBED_MODEL: ${DUCKDOCS_EMBED_MODEL:-nomic-embed-text}
+      DUCKDOCS_LOG_LEVEL: ${DUCKDOCS_LOG_LEVEL:-INFO}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
       ANONYMIZED_TELEMETRY: "FALSE"
       OLLAMA_BASE_URL: http://ollama:11434
       DUCKDOCS_CHROMA_URL: http://chromadb:8000

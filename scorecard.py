@@ -18,6 +18,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import socket
 
 REFUSAL_TEXT_HINTS = ("not enough evidence", "insufficient_evidence", "insufficient evidence")
 
@@ -62,6 +63,26 @@ def ask(base, query, timeout):
         return json.loads(resp.read().decode("utf-8"))
 
 
+def get_json(base, path, timeout):
+    req = urllib.request.Request(base.rstrip("/") + path, method="GET")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def preflight(base, timeout):
+    documents = get_json(base, "/api/v1/documents?limit=100", timeout).get("items", [])
+    if len(documents) != 15:
+        raise RuntimeError(f"Scorecard aborted: expected 15 documents in the Library, found {len(documents)}.")
+    names = [str(document.get("name", "")).casefold() for document in documents]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise RuntimeError(f"Scorecard aborted: duplicate Library filename(s): {', '.join(duplicates)}.")
+    jobs = get_json(base, "/api/v1/ingest-jobs", timeout)
+    active = [job.get("id", "unknown") for job in jobs if job.get("status") in {"queued", "processing"}]
+    if active:
+        raise RuntimeError(f"Scorecard aborted: ingest job(s) still active: {', '.join(active)}.")
+
+
 def split_response(resp):
     """Return (answer_text, refused, citation_snippets, citation_count)."""
     citations = resp.get("citations") or []
@@ -101,7 +122,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--url", default="http://localhost:8000")
     parser.add_argument("--label", default="run")
-    parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--timeout", type=int, default=90)
     parser.add_argument("--only", default="", help="comma-separated question numbers, e.g. 1,4,7")
     args = parser.parse_args()
 
@@ -109,12 +130,20 @@ def main():
     cases = [c for c in CASES if not wanted or c["id"] in wanted]
     results, raw = [], {}
 
+    try:
+        preflight(args.url, args.timeout)
+    except Exception as err:
+        print(str(err), file=sys.stderr)
+        return 2
+
     print(f"Scorecard '{args.label}' against {args.url}\n")
     print(f"{'#':>2}  {'Result':<8}{'Cited':<6}{'Chunks':>6}{'Secs':>6}  {'Provider':<26}Answer")
     print("-" * 110)
+    consecutive_timeouts = 0
     for case in cases:
         started = time.time()
         chunks, provider = "?", ""
+        abort_after_case = False
         try:
             resp = ask(args.url, case["q"], args.timeout)
             result, cited, shown = grade(case, resp)
@@ -125,17 +154,40 @@ def main():
             else:
                 provider = str(provider_info)
             raw[case["id"]] = resp
+            consecutive_timeouts = 0
         except urllib.error.HTTPError as err:
             result, cited = "FAIL", "n/a"
             shown = f"HTTP {err.code}: {err.read().decode('utf-8', 'replace')[:80]}"
             raw[case["id"]] = {"error": shown}
-        except Exception as err:  # connection refused, timeout, bad JSON
+        except (socket.timeout, TimeoutError) as err:
+            result, cited, shown = "FAIL", "n/a", f"TIMEOUT: {err}"
+            raw[case["id"]] = {"error": str(err), "timeout": True}
+            consecutive_timeouts += 1
+            if consecutive_timeouts >= 2:
+                print("Scorecard aborted: 2 consecutive question timeouts.", file=sys.stderr)
+                abort_after_case = True
+        except urllib.error.URLError as err:
+            if isinstance(err.reason, (socket.timeout, TimeoutError)):
+                result, cited, shown = "FAIL", "n/a", f"TIMEOUT: {err}"
+                raw[case["id"]] = {"error": str(err), "timeout": True}
+                consecutive_timeouts += 1
+                if consecutive_timeouts >= 2:
+                    print("Scorecard aborted: 2 consecutive question timeouts.", file=sys.stderr)
+                    abort_after_case = True
+            else:
+                result, cited, shown = "FAIL", "n/a", f"ERROR: {err}"
+                raw[case["id"]] = {"error": str(err)}
+                consecutive_timeouts = 0
+        except Exception as err:  # connection refused, bad JSON
             result, cited, shown = "FAIL", "n/a", f"ERROR: {err}"
             raw[case["id"]] = {"error": str(err)}
+            consecutive_timeouts = 0
         elapsed = time.time() - started
         one_line = " ".join(shown.split())[:55]
         print(f"{case['id']:>2}  {result:<8}{cited:<6}{chunks!s:>6}{elapsed:>6.0f}  {provider[:25]:<26}{one_line}")
         results.append((case["id"], result, cited))
+        if abort_after_case:
+            break
 
     passes = sum(1 for _, r, _ in results if r == "PASS")
     partial = sum(1 for _, r, _ in results if r == "PARTIAL")
@@ -152,4 +204,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

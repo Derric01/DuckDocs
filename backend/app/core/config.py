@@ -40,6 +40,12 @@ class Settings:
     chunk_max_words: int = 180
     chunk_overlap_words: int = 30
     max_chunks_per_document: int = 4000
+    ask_num_predict: int = 128
+    ask_num_ctx: int = 4096
+    ask_timeout_seconds: float = 60.0
+    ask_max_chunks: int = 6
+    ask_chunk_max_chars: int = 1200
+    ollama_keep_alive: str = "10m"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -73,6 +79,12 @@ class Settings:
             chunk_max_words=int(os.getenv("DUCKDOCS_CHUNK_MAX_WORDS", "180")),
             chunk_overlap_words=int(os.getenv("DUCKDOCS_CHUNK_OVERLAP_WORDS", "30")),
             max_chunks_per_document=int(os.getenv("DUCKDOCS_MAX_CHUNKS_PER_DOCUMENT", "4000")),
+            ask_num_predict=int(os.getenv("DUCKDOCS_ASK_NUM_PREDICT", "128")),
+            ask_num_ctx=int(os.getenv("DUCKDOCS_ASK_NUM_CTX", "4096")),
+            ask_timeout_seconds=float(os.getenv("DUCKDOCS_ASK_TIMEOUT_SECONDS", "60")),
+            ask_max_chunks=int(os.getenv("DUCKDOCS_ASK_MAX_CHUNKS", "6")),
+            ask_chunk_max_chars=int(os.getenv("DUCKDOCS_ASK_CHUNK_MAX_CHARS", "1200")),
+            ollama_keep_alive=os.getenv("OLLAMA_KEEP_ALIVE", "10m"),
         )
 
 

@@ -7,7 +7,7 @@ from app.domain.models import Evidence
 from app.providers.ollama import OllamaChatAdapter
 from app.repositories.memory import DocumentRepository
 from app.services.rag import GroundingGate, RagService, build_ask_prompt
-from app.services.vector_store import VectorStore
+from app.services.vector_store import RetrievedChunk, VectorStore
 
 
 def _gate_result(output: str, evidence: str = "The marker is ALPHA.") -> str:
@@ -66,6 +66,30 @@ def test_ask_prompt_has_no_persona_or_example_answer() -> None:
     assert evidence.snippet not in prompt
 
 
+def test_ask_prompt_caps_context_size() -> None:
+    chunks = [
+        RetrievedChunk(
+            evidence=Evidence(
+                id=f"ev_{index}",
+                document_id="doc",
+                document_name="file.txt",
+                section="section",
+                page=1,
+                line_start=1,
+                line_end=1,
+                snippet="x" * 500,
+                retrieval_score=0.9,
+                relevance="High",
+            ),
+            score=0.9,
+        )
+        for index in range(8)
+    ]
+    prompt = build_ask_prompt("What is the marker?", chunks, max_chunks=6, max_chars=100)
+    assert prompt.count("[[chunk:") == 6
+    assert "x" * 101 not in prompt
+
+
 def test_ollama_ask_payload_is_deterministic(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     adapter = OllamaChatAdapter(base_url="http://ollama:11434", model_name="llama3.2:1b")
     calls: list[dict[str, object]] = []
@@ -76,7 +100,12 @@ def test_ollama_ask_payload_is_deterministic(monkeypatch) -> None:  # type: igno
 
     monkeypatch.setattr(adapter, "_post_json", fake_post)
     adapter.generate("prompt", stream=False, structured_output=True)
-    assert calls[0]["options"] == {"temperature": 0, "seed": 0}
+    assert calls[0]["options"] == {
+        "temperature": 0,
+        "seed": 0,
+        "num_predict": 128,
+        "num_ctx": 4096,
+    }
     assert calls[0]["format"] == "json"
 
 

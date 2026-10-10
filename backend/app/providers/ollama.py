@@ -14,9 +14,23 @@ from app.providers.base import HealthStatus, ProviderRef
 
 
 class OllamaChatAdapter:
-    def __init__(self, *, base_url: str, model_name: str, config_id: str = "cfg_chat_ollama") -> None:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        model_name: str,
+        config_id: str = "cfg_chat_ollama",
+        num_predict: int = 128,
+        num_ctx: int = 4096,
+        timeout_seconds: float = 60.0,
+        keep_alive: str = "10m",
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
+        self.num_predict = num_predict
+        self.num_ctx = num_ctx
+        self.timeout_seconds = timeout_seconds
+        self.keep_alive = keep_alive
         self.ref: ProviderRef = {
             "role": "chat",
             "provider_type": "ollama",
@@ -32,7 +46,13 @@ class OllamaChatAdapter:
             "model": self.model_name,
             "prompt": prompt,
             "stream": stream,
-            "options": {"temperature": 0, "seed": 0},
+            "options": {
+                "temperature": 0,
+                "seed": 0,
+                "num_predict": self.num_predict,
+                "num_ctx": self.num_ctx,
+            },
+            "keep_alive": self.keep_alive,
         }
         if structured_output:
             payload["format"] = "json"
@@ -48,7 +68,7 @@ class OllamaChatAdapter:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=120) as response:
+        with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
             for raw_line in response:
                 line = raw_line.decode("utf-8").strip()
                 if not line:
@@ -116,7 +136,7 @@ class OllamaChatAdapter:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
                 body: dict[str, Any] = json.loads(response.read().decode("utf-8"))
                 return body
         except urllib.error.HTTPError as error:
