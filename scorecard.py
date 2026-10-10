@@ -8,6 +8,8 @@ Usage:
 
 Standard library only. It talks to localhost, so nothing leaves your machine.
 Upload the 15 test files first and wait until each shows Ready in the Library.
+Uses the real GroundedResponse fields: outcome, answer, grounded, citations,
+provider, retrieved_chunk_count, refusal_reason.
 """
 import argparse
 import json
@@ -17,7 +19,7 @@ import time
 import urllib.error
 import urllib.request
 
-REFUSAL_HINTS = ("not enough evidence", "insufficient evidence", "no_evidence", "not_enough_evidence")
+REFUSAL_TEXT_HINTS = ("not enough evidence", "insufficient_evidence", "insufficient evidence")
 
 # must: regexes that must ALL match the answer text (otherwise FAIL)
 # must_not: regexes that downgrade a correct answer to PARTIAL (raw dumps, extra rows)
@@ -60,31 +62,15 @@ def ask(base, query, timeout):
         return json.loads(resp.read().decode("utf-8"))
 
 
-def string_values(obj):
-    if isinstance(obj, str):
-        yield obj
-    elif isinstance(obj, dict):
-        for value in obj.values():
-            yield from string_values(value)
-    elif isinstance(obj, list):
-        for value in obj:
-            yield from string_values(value)
-
-
 def split_response(resp):
-    """Return (answer_text, other_strings, citation_snippets, citation_count)."""
+    """Return (answer_text, refused, citation_snippets, citation_count)."""
     citations = resp.get("citations") or []
     snippets = " ".join(str(c.get("snippet", "")) for c in citations if isinstance(c, dict))
-    rest = {k: v for k, v in resp.items() if k not in ("citations", "query")}
-    answer = None
-    for key in ("answer", "text", "message", "response"):
-        if isinstance(resp.get(key), str) and resp[key].strip():
-            answer = resp[key]
-            break
-    others = list(string_values(rest))
-    if answer is None:
-        answer = " ".join(others)
-    return answer, others, snippets, len(citations)
+    answer = resp.get("answer") if isinstance(resp.get("answer"), str) else ""
+    refused = resp.get("outcome") == "insufficient_evidence" or not answer.strip()
+    if not refused and any(h in answer.lower() for h in REFUSAL_TEXT_HINTS):
+        refused = True
+    return answer, refused, snippets, len(citations)
 
 
 def matches_all(patterns, text):
@@ -92,20 +78,19 @@ def matches_all(patterns, text):
 
 
 def grade(case, resp):
-    answer, others, snippets, n_cites = split_response(resp)
-    refused = any(h in s.lower() for s in others + [answer] for h in REFUSAL_HINTS)
+    """Return (result, cited, shown_text)."""
+    answer, refused, snippets, _ = split_response(resp)
+    shown = answer if answer.strip() else f"[refused: {resp.get('refusal_reason') or 'no reason given'}]"
     if case.get("refusal"):
-        if refused:
-            return "PASS", "n/a", answer
-        return "FAIL", "n/a", answer
+        return ("PASS" if refused else "FAIL"), "n/a", shown
     if refused:
-        return "FAIL", "NO", answer
+        return "FAIL", "NO", shown
     cite_ok = "yes" if matches_all(case.get("cite", case["must"]), snippets) else "NO"
     if not matches_all(case["must"], answer):
-        return "FAIL", cite_ok, answer
+        return "FAIL", cite_ok, shown
     if any(re.search(p, answer, re.IGNORECASE) for p in case.get("must_not", [])):
-        return "PARTIAL", cite_ok, answer
-    return "PASS", cite_ok, answer
+        return "PARTIAL", cite_ok, shown
+    return "PASS", cite_ok, shown
 
 
 def main():
@@ -123,32 +108,34 @@ def main():
     results, raw = [], {}
 
     print(f"Scorecard '{args.label}' against {args.url}\n")
-    print(f"{'#':>2}  {'Result':<8}{'Cited':<6}{'Secs':>5}  Answer")
-    print("-" * 100)
+    print(f"{'#':>2}  {'Result':<8}{'Cited':<6}{'Chunks':>6}{'Secs':>6}  {'Provider':<26}Answer")
+    print("-" * 110)
     for case in cases:
         started = time.time()
+        chunks, provider = "?", ""
         try:
             resp = ask(args.url, case["q"], args.timeout)
-            if not results and not raw:
-                print(f"    (response keys: {sorted(resp.keys())})")
-            result, cited, answer = grade(case, resp)
+            result, cited, shown = grade(case, resp)
+            chunks = resp.get("retrieved_chunk_count", "?")
+            provider = str(resp.get("provider", ""))
             raw[case["id"]] = resp
         except urllib.error.HTTPError as err:
-            result, cited, answer = "FAIL", "n/a", f"HTTP {err.code}: {err.read().decode('utf-8', 'replace')[:80]}"
-            raw[case["id"]] = {"error": answer}
+            result, cited = "FAIL", "n/a"
+            shown = f"HTTP {err.code}: {err.read().decode('utf-8', 'replace')[:80]}"
+            raw[case["id"]] = {"error": shown}
         except Exception as err:  # connection refused, timeout, bad JSON
-            result, cited, answer = "FAIL", "n/a", f"ERROR: {err}"
+            result, cited, shown = "FAIL", "n/a", f"ERROR: {err}"
             raw[case["id"]] = {"error": str(err)}
         elapsed = time.time() - started
-        one_line = " ".join(answer.split())[:60]
-        print(f"{case['id']:>2}  {result:<8}{cited:<6}{elapsed:>5.0f}  {one_line}")
+        one_line = " ".join(shown.split())[:55]
+        print(f"{case['id']:>2}  {result:<8}{cited:<6}{chunks!s:>6}{elapsed:>6.0f}  {provider[:25]:<26}{one_line}")
         results.append((case["id"], result, cited))
 
     passes = sum(1 for _, r, _ in results if r == "PASS")
     partial = sum(1 for _, r, _ in results if r == "PARTIAL")
     fails = sum(1 for _, r, _ in results if r == "FAIL")
     bad_cites = sum(1 for _, r, c in results if c == "NO" and r != "FAIL")
-    print("-" * 100)
+    print("-" * 110)
     print(f"PASS {passes}   PARTIAL {partial}   FAIL {fails}   of {len(results)}"
           f"   |   passing answers with a wrong/missing citation: {bad_cites}")
 
