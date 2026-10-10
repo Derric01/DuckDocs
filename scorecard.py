@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""DuckDocs scorecard: asks the 13 test questions via POST /api/v1/ask and grades them.
+
+Usage:
+    python scorecard.py --label veera-merged
+    python scorecard.py --label after-fix --url http://localhost:8000
+    python scorecard.py --label retry --only 1,4,7
+
+Standard library only. It talks to localhost, so nothing leaves your machine.
+Upload the 15 test files first and wait until each shows Ready in the Library.
+"""
+import argparse
+import json
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+
+REFUSAL_HINTS = ("not enough evidence", "insufficient evidence", "no_evidence", "not_enough_evidence")
+
+# must: regexes that must ALL match the answer text (otherwise FAIL)
+# must_not: regexes that downgrade a correct answer to PARTIAL (raw dumps, extra rows)
+# cite: regexes that must ALL match the cited snippets (defaults to must)
+CASES = [
+    {"id": 1, "q": "What is the test marker in the native text PDF?",
+     "must": [r"NATIVE-PDF-7f3a2b"]},
+    {"id": 2, "q": "What does the scanned OCR PDF say?",
+     "must": [r"SCAN-PDF-9d1c4e|rendered image embedded in a PDF"]},
+    {"id": 3, "q": "What is the annual average high temperature in Kyoto?",
+     "must": [r"21\.0"]},
+    {"id": 4, "q": "What is the marker on page 2 of the scanned multi-page document?",
+     "must": [r"SCAN-PAGE-2-b82e"]},
+    {"id": 5, "q": "What's written in the presentation's third slide?",
+     "must": [r"PPTX-SLIDE3-ce02"]},
+    {"id": 6, "q": "What does the second paragraph after the page break say in the Word document?",
+     "must": [r"new page|page-break awareness"]},
+    {"id": 7, "q": "How many units of Widget A are in stock?",
+     "must": [r"\b12\b"], "cite": [r"Widget A"]},
+    {"id": 8, "q": "What was the total revenue across January, February, and March in the sales spreadsheet?",
+     "must": [r"37,?300"], "cite": [r"15,?500"]},
+    {"id": 9, "q": "Which employees work in the Engineering department and what are their salaries?",
+     "must": [r"Asha Rao.*85,?000", r"Priya Nair.*91,?000"], "must_not": [r"Marcus Lee"],
+     "cite": [r"Asha Rao", r"Priya Nair"]},
+    {"id": 10, "q": "What's the marker value in the YAML config file?",
+     "must": [r"YAML-MARKER-2d9b"], "must_not": [r"structured extraction test"]},
+    {"id": 11, "q": "What items are listed in the XML file?",
+     "must": [r"First", r"Second"], "must_not": [r"<root>|<item"]},
+    {"id": 12, "q": "What is DuckDocs' pricing model?", "refusal": True},
+    {"id": 13, "q": "Who is the CEO of DuckDocs?", "refusal": True},
+]
+
+
+def ask(base, query, timeout):
+    body = json.dumps({"query": query, "stream": False}).encode("utf-8")
+    req = urllib.request.Request(
+        base.rstrip("/") + "/api/v1/ask", data=body,
+        headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def string_values(obj):
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for value in obj.values():
+            yield from string_values(value)
+    elif isinstance(obj, list):
+        for value in obj:
+            yield from string_values(value)
+
+
+def split_response(resp):
+    """Return (answer_text, other_strings, citation_snippets, citation_count)."""
+    citations = resp.get("citations") or []
+    snippets = " ".join(str(c.get("snippet", "")) for c in citations if isinstance(c, dict))
+    rest = {k: v for k, v in resp.items() if k not in ("citations", "query")}
+    answer = None
+    for key in ("answer", "text", "message", "response"):
+        if isinstance(resp.get(key), str) and resp[key].strip():
+            answer = resp[key]
+            break
+    others = list(string_values(rest))
+    if answer is None:
+        answer = " ".join(others)
+    return answer, others, snippets, len(citations)
+
+
+def matches_all(patterns, text):
+    return all(re.search(p, text, re.IGNORECASE | re.DOTALL) for p in patterns)
+
+
+def grade(case, resp):
+    answer, others, snippets, n_cites = split_response(resp)
+    refused = any(h in s.lower() for s in others + [answer] for h in REFUSAL_HINTS)
+    if case.get("refusal"):
+        if refused:
+            return "PASS", "n/a", answer
+        return "FAIL", "n/a", answer
+    if refused:
+        return "FAIL", "NO", answer
+    cite_ok = "yes" if matches_all(case.get("cite", case["must"]), snippets) else "NO"
+    if not matches_all(case["must"], answer):
+        return "FAIL", cite_ok, answer
+    if any(re.search(p, answer, re.IGNORECASE) for p in case.get("must_not", [])):
+        return "PARTIAL", cite_ok, answer
+    return "PASS", cite_ok, answer
+
+
+def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--url", default="http://localhost:8000")
+    parser.add_argument("--label", default="run")
+    parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--only", default="", help="comma-separated question numbers, e.g. 1,4,7")
+    args = parser.parse_args()
+
+    wanted = {int(x) for x in args.only.split(",") if x.strip()}
+    cases = [c for c in CASES if not wanted or c["id"] in wanted]
+    results, raw = [], {}
+
+    print(f"Scorecard '{args.label}' against {args.url}\n")
+    print(f"{'#':>2}  {'Result':<8}{'Cited':<6}{'Secs':>5}  Answer")
+    print("-" * 100)
+    for case in cases:
+        started = time.time()
+        try:
+            resp = ask(args.url, case["q"], args.timeout)
+            if not results and not raw:
+                print(f"    (response keys: {sorted(resp.keys())})")
+            result, cited, answer = grade(case, resp)
+            raw[case["id"]] = resp
+        except urllib.error.HTTPError as err:
+            result, cited, answer = "FAIL", "n/a", f"HTTP {err.code}: {err.read().decode('utf-8', 'replace')[:80]}"
+            raw[case["id"]] = {"error": answer}
+        except Exception as err:  # connection refused, timeout, bad JSON
+            result, cited, answer = "FAIL", "n/a", f"ERROR: {err}"
+            raw[case["id"]] = {"error": str(err)}
+        elapsed = time.time() - started
+        one_line = " ".join(answer.split())[:60]
+        print(f"{case['id']:>2}  {result:<8}{cited:<6}{elapsed:>5.0f}  {one_line}")
+        results.append((case["id"], result, cited))
+
+    passes = sum(1 for _, r, _ in results if r == "PASS")
+    partial = sum(1 for _, r, _ in results if r == "PARTIAL")
+    fails = sum(1 for _, r, _ in results if r == "FAIL")
+    bad_cites = sum(1 for _, r, c in results if c == "NO" and r != "FAIL")
+    print("-" * 100)
+    print(f"PASS {passes}   PARTIAL {partial}   FAIL {fails}   of {len(results)}"
+          f"   |   passing answers with a wrong/missing citation: {bad_cites}")
+
+    out_file = f"scorecard_{args.label}.json"
+    with open(out_file, "w", encoding="utf-8") as fh:
+        json.dump({"label": args.label, "results": results, "raw": raw}, fh, indent=2, ensure_ascii=False)
+    print(f"Raw responses saved to {out_file}")
+
+
+if __name__ == "__main__":
+    main()
