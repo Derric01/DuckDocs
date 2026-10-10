@@ -96,11 +96,7 @@ def _most_relevant_sentence(
         "what", "when", "where", "which", "who", "how", "does", "did", "is", "are", "the", "a", "an",
         "at", "in", "of", "for", "to", "and", "it", "on",
     }
-    terms = {
-        term.lower()
-        for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", question.lower())
-        if term.lower() not in stop_words and len(term) > 1
-    }
+    terms = _content_terms(question, stop_words)
     is_why_question = bool(re.search(r"\bwhy\b", question, flags=re.I))
     causal_cues = {
         "because", "since", "therefore", "caused", "cause", "reason", "result", "resulted", "led",
@@ -117,7 +113,7 @@ def _most_relevant_sentence(
             if part.strip()
         ]
         for sentence_index, sentence in enumerate(sentences):
-            sentence_terms = set(re.findall(r"[a-z0-9][a-z0-9_.-]*", sentence.lower()))
+            sentence_terms = _content_terms(sentence, stop_words)
             score = sum(
                 log((document_count + 1) / (term_document_frequency.get(term, 0) + 1)) + 1
                 for term in terms & sentence_terms
@@ -138,6 +134,14 @@ def _most_relevant_sentence(
         return chunk_id, sentence
     chunk_id, snippet = pairs[0]
     return chunk_id, snippet.strip()
+
+
+def _content_terms(value: str, stop_words: set[str]) -> set[str]:
+    terms: set[str] = set()
+    for token in re.findall(r"[a-z0-9][a-z0-9_.-]*", value.lower()):
+        parts = re.findall(r"[a-z0-9]+", token)
+        terms.update(part for part in parts if part not in stop_words and len(part) > 1)
+    return terms
 
 
 def _answer_tabular_question(prompt: str, pairs: list[tuple[str, str]]) -> str | None:

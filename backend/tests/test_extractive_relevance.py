@@ -47,6 +47,26 @@ def test_why_question_can_select_cause_from_a_lower_ranked_chunk() -> None:
     assert "nap" in sentence or "sleep" in sentence
 
 
+def test_file_format_terms_are_split_and_weighted_across_library_documents() -> None:
+    question = "What's the marker value in the YAML config file?"
+    chunks = [
+        ("ev_yaml", "test_file: 13-config.yaml purpose: structured extraction test marker: YAML-MARKER-2d9b"),
+        ("ev_markdown", "# DuckDocs Test File - Markdown This tests plain text/markdown extraction."),
+    ]
+    frequencies = {
+        "test": 2,
+        "file": 2,
+        "yaml": 1,
+        "config": 1,
+        "marker": 1,
+    }
+
+    evidence_id, sentence = _most_relevant_sentence(question, chunks, frequencies, document_count=2)
+
+    assert evidence_id == "ev_yaml"
+    assert "YAML-MARKER-2d9b" in sentence
+
+
 def test_grounding_gate_checks_six_word_factual_claims() -> None:
     result = GroundingGate().validate(
         "The record identifies the Engineering department. [chunk:ev_climate]",

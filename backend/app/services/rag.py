@@ -694,14 +694,18 @@ class RagService:
         if (gate.outcome != "grounded" or gate.text is None) and chunks:
             from app.providers.extractive import ExtractiveChatAdapter
 
-            term_document_frequency: dict[str, int] = {}
+            term_documents: dict[str, set[str]] = {}
             for evidence in self.repository.evidence.values():
                 terms = set(re.findall(r"[a-z0-9][a-z0-9_.-]*", evidence.snippet.lower()))
                 for term in terms:
-                    term_document_frequency[term] = term_document_frequency.get(term, 0) + 1
+                    parts = re.findall(r"[a-z0-9]+", term)
+                    for part in parts:
+                        term_documents.setdefault(part, set()).add(evidence.document_id)
+            term_document_frequency = {term: len(document_ids) for term, document_ids in term_documents.items()}
+            document_count = len({evidence.document_id for evidence in self.repository.evidence.values()})
             extractive = ExtractiveChatAdapter(
                 term_document_frequency=term_document_frequency,
-                document_count=len(self.repository.evidence),
+                document_count=document_count,
             )
             provider_meta = {
                 "kind": "chat",
