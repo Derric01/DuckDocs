@@ -45,6 +45,7 @@ class Settings:
     ask_timeout_seconds: float = 60.0
     ask_max_chunks: int = 6
     ask_chunk_max_chars: int = 1200
+    ask_retries: int = 0
     ollama_keep_alive: str = "10m"
 
     @classmethod
@@ -84,6 +85,7 @@ class Settings:
             ask_timeout_seconds=float(os.getenv("DUCKDOCS_ASK_TIMEOUT_SECONDS", "60")),
             ask_max_chunks=int(os.getenv("DUCKDOCS_ASK_MAX_CHUNKS", "6")),
             ask_chunk_max_chars=int(os.getenv("DUCKDOCS_ASK_CHUNK_MAX_CHARS", "1200")),
+            ask_retries=int(os.getenv("DUCKDOCS_ASK_RETRIES", "0")),
             ollama_keep_alive=os.getenv("OLLAMA_KEEP_ALIVE", "10m"),
         )
 

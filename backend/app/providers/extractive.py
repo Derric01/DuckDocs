@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, datetime
 import re
+from math import log
 
 from app.providers.base import HealthStatus, ProviderRef
 
@@ -12,7 +13,12 @@ from app.providers.base import HealthStatus, ProviderRef
 class ExtractiveChatAdapter:
     """Deterministic local synthesizer used when no LLM provider is connected."""
 
-    def __init__(self, config_id: str = "cfg_chat_extractive") -> None:
+    def __init__(
+        self,
+        config_id: str = "cfg_chat_extractive",
+        term_document_frequency: dict[str, int] | None = None,
+        document_count: int = 0,
+    ) -> None:
         self.ref: ProviderRef = {
             "role": "chat",
             "provider_type": "extractive",
@@ -20,6 +26,8 @@ class ExtractiveChatAdapter:
             "base_url": None,
             "config_id": config_id,
         }
+        self._term_document_frequency = term_document_frequency or {}
+        self._document_count = document_count
 
     def generate(self, prompt: str, *, stream: bool = True) -> Iterator[str] | str:
         # The RAG layer passes a prompt that already includes chunk markers.
@@ -41,7 +49,12 @@ class ExtractiveChatAdapter:
             # Rank candidate sentences across the retrieved set. The top chunk
             # can be semantically close but contain only neighboring context;
             # answerability is determined at sentence level.
-            chunk_id, sentence = _most_relevant_sentence(question, pairs)
+            chunk_id, sentence = _most_relevant_sentence(
+                question,
+                pairs,
+                self._term_document_frequency,
+                self._document_count,
+            )
             text = f"{sentence.rstrip('.!?')} [chunk:{chunk_id}]."
         if stream:
             return iter([text])
@@ -72,7 +85,12 @@ def _extract_question(prompt: str) -> str:
     return questions[-1] if questions else ""
 
 
-def _most_relevant_sentence(question: str, pairs: list[tuple[str, str]]) -> tuple[str, str]:
+def _most_relevant_sentence(
+    question: str,
+    pairs: list[tuple[str, str]],
+    term_document_frequency: dict[str, int] | None = None,
+    document_count: int = 0,
+) -> tuple[str, str]:
     """Return one complete, question-relevant sentence for grounded fallback."""
     stop_words = {
         "what", "when", "where", "which", "who", "how", "does", "did", "is", "are", "the", "a", "an",
@@ -100,7 +118,10 @@ def _most_relevant_sentence(question: str, pairs: list[tuple[str, str]]) -> tupl
         ]
         for sentence_index, sentence in enumerate(sentences):
             sentence_terms = set(re.findall(r"[a-z0-9][a-z0-9_.-]*", sentence.lower()))
-            score = len(terms & sentence_terms)
+            score = sum(
+                log((document_count + 1) / (term_document_frequency.get(term, 0) + 1)) + 1
+                for term in terms & sentence_terms
+            ) if document_count else len(terms & sentence_terms)
             if is_why_question:
                 # A causal/decision question is best answered by the passage
                 # stating the recommendation or reason, rather than a nearby

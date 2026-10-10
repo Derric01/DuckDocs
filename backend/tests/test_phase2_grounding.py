@@ -123,6 +123,29 @@ def test_gate_accepts_only_verified_structured_claims() -> None:
     assert result.text == "The marker is ALPHA [chunk:ev_alpha]."
 
 
+def test_gate_accepts_simple_answer_with_verified_passage_number() -> None:
+    result = GroundingGate().validate(
+        '{"answer":"The marker is ALPHA.","evidence_ids":["1"]}',
+        {"1"},
+        task="ask",
+        evidence_by_id={"1": "The marker is ALPHA."},
+        query="What is the marker?",
+    )
+    assert result.outcome == "grounded"
+    assert result.cited_ids == ["1"]
+
+
+def test_gate_rejects_simple_answer_with_empty_passage() -> None:
+    result = GroundingGate().validate(
+        '{"answer":"The marker is ALPHA.","evidence_ids":["1"]}',
+        {"1"},
+        task="ask",
+        evidence_by_id={"1": ""},
+        query="What is the marker?",
+    )
+    assert result.outcome == "insufficient_evidence"
+
+
 def test_empty_selected_passages_are_not_returned_as_citations() -> None:
     evidence = Evidence(
         id="ev_alpha",

@@ -95,6 +95,31 @@ class GroundingGate:
                 cited_ids=list(dict.fromkeys(evidence_id for _, evidence_id in verified)),
             )
 
+        simple = _parse_simple_answer(stripped)
+        if simple is not None:
+            answer, cited_ids = simple
+            if (
+                not answer
+                or not cited_ids
+                or any(cited_id not in allowed_chunk_ids for cited_id in cited_ids)
+                or not evidence_by_id
+                or any(not evidence_by_id.get(cited_id, "").strip() for cited_id in cited_ids)
+                or _looks_like_junk_output(answer, query)
+                or not _claims_match_evidence([answer], cited_ids, evidence_by_id)
+            ):
+                return GateResult(
+                    outcome="insufficient_evidence",
+                    text=None,
+                    cited_ids=[],
+                    reason="no_verified_claims",
+                )
+            normalized = f"{answer.rstrip('.!?')} [chunk:{cited_ids[0]}]."
+            return GateResult(
+                outcome="grounded",
+                text=normalized,
+                cited_ids=list(dict.fromkeys(cited_ids)),
+            )
+
         if _looks_like_junk_output(stripped, query):
             return GateResult(
                 outcome="insufficient_evidence",
@@ -184,6 +209,8 @@ def _parse_structured_claims(raw_output: str) -> list[tuple[str, str, str]] | No
     except json.JSONDecodeError:
         return []
     claims = payload.get("claims") if isinstance(payload, dict) else None
+    if claims is None:
+        return None
     if not isinstance(claims, list):
         return []
     parsed: list[tuple[str, str, str]] = []
@@ -196,6 +223,22 @@ def _parse_structured_claims(raw_output: str) -> list[tuple[str, str, str]] | No
         if all(isinstance(value, str) and value.strip() for value in (claim, evidence_id, quote)):
             parsed.append((claim.strip(), evidence_id.strip(), quote.strip()))
     return parsed
+
+
+def _parse_simple_answer(raw_output: str) -> tuple[str, list[str]] | None:
+    if not raw_output.startswith("{"):
+        return None
+    try:
+        payload = json.loads(raw_output)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict) or not isinstance(payload.get("answer"), str):
+        return None
+    evidence_ids = payload.get("evidence_ids")
+    if not isinstance(evidence_ids, list):
+        return None
+    normalized_ids = [str(value).strip() for value in evidence_ids if isinstance(value, (int, str))]
+    return payload["answer"].strip(), [value for value in normalized_ids if value]
 
 
 def _quote_matches(quote: str, source: str) -> bool:
@@ -388,17 +431,17 @@ def build_ask_prompt(
     context_window: int = 4096,
 ) -> str:
     blocks: list[str] = []
-    for chunk in chunks[:max_chunks]:
+    for index, chunk in enumerate(chunks[:max_chunks], start=1):
         snippet = chunk.evidence.snippet[:max_chars]
         blocks.append(
-            f"[[chunk:{chunk.evidence.id}]]\n{snippet}\n[[/chunk]]"
+            f"[[chunk:{index}]]\n{snippet}\n[[/chunk]]"
         )
     context = "\n\n".join(blocks)
     prompt = (
         "Answer only from the provided context.\n"
-        "Return a JSON object with a claims array. Each claim must contain "
-        "claim, evidence_id, and a short verbatim quote from that evidence.\n"
-        "If the context is insufficient, return {\"claims\":[]}.\n\n"
+        "Return a JSON object with a short answer and an evidence_ids array. "
+        "Use the passage numbers as evidence_ids. Do not copy quotes.\n"
+        "If the context is insufficient, return {\"answer\":\"\",\"evidence_ids\":[]}.\n\n"
         f"Question: {query}\n\nContext:\n{context}\n\nAnswer:"
     )
     estimated_tokens = (len(prompt) + 3) // 4
@@ -612,13 +655,18 @@ class RagService:
             }
             raw = chat.generate(prompt, stream=False)
         raw_text = raw if isinstance(raw, str) else "".join(raw)
-        allowed = {chunk.evidence.id for chunk in chunks}
-        evidence_by_id = {chunk.evidence.id: chunk.evidence.snippet for chunk in chunks}
+        allowed = {str(index) for index, chunk in enumerate(chunks[: self.settings.ask_max_chunks], start=1)}
+        evidence_by_id = {
+            str(index): chunk.evidence.snippet
+            for index, chunk in enumerate(chunks[: self.settings.ask_max_chunks], start=1)
+        }
         stage_started = perf_counter()
         gate = self.gate.validate(raw_text, allowed, task="ask", evidence_by_id=evidence_by_id, query=query)
         _log_stage("verification", stage_started, outcome=gate.outcome, reason=gate.reason or "none")
 
-        if gate.outcome != "grounded" and chat.ref["provider_type"] == "ollama":
+        for retry in range(max(0, self.settings.ask_retries)) if chat.ref["provider_type"] == "ollama" else ():
+            if gate.outcome == "grounded":
+                break
             correction_prompt = (
                 f"{prompt}\n\n"
                 "Your previous response did not include a valid citation. Correct it now. "
@@ -628,17 +676,17 @@ class RagService:
             try:
                 stage_started = perf_counter()
                 corrected = _generate_chat(chat, correction_prompt)
-                _log_stage("model_call", stage_started, attempt=2, provider=chat.ref["provider_type"])
+                _log_stage("model_call", stage_started, attempt=retry + 2, provider=chat.ref["provider_type"])
                 corrected_text = corrected if isinstance(corrected, str) else "".join(corrected)
                 stage_started = perf_counter()
                 gate = self.gate.validate(
                     corrected_text, allowed, task="ask", evidence_by_id=evidence_by_id, query=query
                 )
-                _log_stage("verification", stage_started, attempt=2, outcome=gate.outcome, reason=gate.reason or "none")
+                _log_stage("verification", stage_started, attempt=retry + 2, outcome=gate.outcome, reason=gate.reason or "none")
                 if gate.outcome == "grounded":
                     raw_text = corrected_text
             except Exception:
-                _log_stage("model_call", stage_started, attempt=2, provider=chat.ref["provider_type"], failed=True)
+                _log_stage("model_call", stage_started, attempt=retry + 2, provider=chat.ref["provider_type"], failed=True)
                 logger.exception("Corrective chat generation failed before grounding gate")
 
         # Small local models often answer without [chunk:id] markers. If we already
@@ -646,7 +694,15 @@ class RagService:
         if (gate.outcome != "grounded" or gate.text is None) and chunks:
             from app.providers.extractive import ExtractiveChatAdapter
 
-            extractive = ExtractiveChatAdapter()
+            term_document_frequency: dict[str, int] = {}
+            for evidence in self.repository.evidence.values():
+                terms = set(re.findall(r"[a-z0-9][a-z0-9_.-]*", evidence.snippet.lower()))
+                for term in terms:
+                    term_document_frequency[term] = term_document_frequency.get(term, 0) + 1
+            extractive = ExtractiveChatAdapter(
+                term_document_frequency=term_document_frequency,
+                document_count=len(self.repository.evidence),
+            )
             provider_meta = {
                 "kind": "chat",
                 "name": extractive.ref["provider_type"],
@@ -681,7 +737,12 @@ class RagService:
             )
 
         stage_started = perf_counter()
-        citations = self._bind_citations(gate.cited_ids, chunks, query, gate.text or "")
+        citation_ids = [
+            chunks[int(cited_id) - 1].evidence.id
+            for cited_id in gate.cited_ids
+            if cited_id.isdigit() and 0 < int(cited_id) <= min(len(chunks), self.settings.ask_max_chunks)
+        ]
+        citations = self._bind_citations(citation_ids, chunks, query, gate.text or "")
         _log_stage("citation_binding", stage_started, citations=len(citations))
         if not citations:
             _log_stage("total", total_started, outcome="insufficient_evidence", chunks=len(chunks))
@@ -702,7 +763,7 @@ class RagService:
                     "threshold": self.settings.min_similarity,
                 },
             )
-        confidence = score_confidence(chunks, gate.cited_ids)
+        confidence = score_confidence(chunks, citation_ids)
         # Removing inline [chunk:id] markers leaves the whitespace that
         # preceded them, which otherwise shows up as "... 18 months ."
         cleaned = CITATION_RE.sub("", gate.text)

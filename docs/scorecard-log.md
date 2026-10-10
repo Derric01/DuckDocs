@@ -81,6 +81,88 @@ result, while retaining both measurements because the 1B model can vary.
 **Aggregate:** 2 PASS, 3 PARTIAL, 8 FAIL; 0 passing answers with a
 wrong/missing citation.
 
+## Phase 2b structured-answer diagnosis and result
+
+The throwaway diagnostic ran the same retrieval, prompt construction, and Ollama
+generation settings as the application. Raw responses were kept only in the
+backend container at `/tmp/phase2b_raw.json` and were not committed.
+
+### Initial failure reasons
+
+| Reason | Count |
+|---|---:|
+| Truncated at `num_predict` (`done_reason=length`, `eval_count=128`) | 11 |
+| Unknown evidence ID (`done_reason=stop`) | 2 |
+| Invalid JSON | 0 |
+| Quote not found | 0 |
+| Accepted | 0 |
+
+The five junk classes were covered by failing regression tests before the
+change. The first-person/meta class could pass the old gate because the old
+citation-density logic only checked factual-looking sentences; a response
+containing only a persona/meta sentence had zero factual claims and therefore
+was not rejected. The gate is now fail-closed and requires a verified answer
+and at least one non-empty cited passage.
+
+### Controlled experiments
+
+| Contract | `num_predict` | JSON | Passages | Accepted | Seconds/question |
+|---|---:|---|---:|---:|---:|
+| Claims plus copied quotes | 128 | on | 6 | 0/13 | 5.56 |
+| Claims plus copied quotes | 128 | off | 6 | 0/13 | 5.18 |
+| Claims plus copied quotes | 256 | on | 6 | 0/13 | 9.75 |
+| Claims plus copied quotes | 384 | on | 6 | 0/13 | 11.64 |
+| Claims plus copied quotes, numeric labels | 256 | on | 6 | 0/13 | 12.18 |
+| Claims plus copied quotes | 256 | on | 3 | 1/13 | 6.99 |
+| Short answer plus passage numbers | 128 | on | 6 | 6/13 | 5.34 |
+| Short answer plus passage numbers | 256 | on | 6 | 6/13 | 2.33 |
+
+The adopted contract is the short answer plus numeric passage labels, with the
+existing 128-token cap retained to minimize latency. The displayed citation
+quote remains selected by the application from stored evidence; model output
+does not supply display text. Corrective retries are configurable through
+`DUCKDOCS_ASK_RETRIES` and default to zero.
+
+### Rebuilt-stack scorecard runs
+
+| # | Run 1 | Seconds | Run 2 | Seconds |
+|---:|---|---:|---|---:|
+| 1 | FAIL | 23 | FAIL | 3 |
+| 2 | FAIL | 6 | FAIL | 3 |
+| 3 | PASS | 13 | PASS | 3 |
+| 4 | PASS | 5 | PASS | 3 |
+| 5 | PASS | 5 | PASS | 3 |
+| 6 | FAIL | 5 | FAIL | 2 |
+| 7 | PASS | 5 | PASS | 2 |
+| 8 | FAIL | 5 | FAIL | 2 |
+| 9 | PARTIAL | 5 | PARTIAL | 2 |
+| 10 | FAIL | 4 | FAIL | 2 |
+| 11 | PARTIAL | 4 | PARTIAL | 2 |
+| 12 | FAIL | 5 | FAIL | 2 |
+| 13 | FAIL | 5 | FAIL | 3 |
+
+Both runs: **4 PASS, 2 PARTIAL, 7 FAIL**, with zero passing answers having a
+wrong or missing citation. The remaining failures are retrieval/source and
+structured-data quality issues reserved for later phases.
+
+### Threading and ingestion observations
+
+The SQL repository does not share a SQLAlchemy `Session` across
+`asyncio.to_thread` calls: each repository operation creates and closes its own
+`SessionLocal` context. The in-memory repository uses process-local dictionaries
+and has no request-scoped session. The vector store shares its Chroma client
+object, but each query is a synchronous client operation with no session state
+stored on the request; this was not changed in Phase 2b. Summary generation
+still competes for the same Ollama model during ingestion; moving summaries
+behind indexing remains a follow-up.
+
+### Test result
+
+Focused Phase 2b validation: **23 passed**. The full locally configured suite
+reported **136 passed, 3 skipped, 2 failed**; both failures were pre-existing
+OCR/environment-sensitive assertions (RapidOCR spacing and standalone image
+keyword retrieval), not caused by the structured-answer changes.
+
 The final rebuilt-image rerun (`phase-2-followup-rebuilt-final`) measured
 `18, 15, 13, 12, 15, 16, 15, 14, 15, 11, 14, 17, 16` seconds for questions
 1–13 respectively. Its aggregate remained 4 PASS, 3 PARTIAL, 6 FAIL, with
