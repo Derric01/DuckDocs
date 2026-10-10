@@ -28,7 +28,7 @@ REFUSAL_TEXT_HINTS = ("not enough evidence", "insufficient_evidence", "insuffici
 CASES = [
     {"id": 1, "q": "What is the test marker in the native text PDF?",
      "must": [r"NATIVE-PDF-7f3a2b"]},
-    {"id": 2, "q": "What does the scanned OCR PDF say?",
+    {"id": 2, "q": "What is the test marker in the scanned OCR PDF?",
      "must": [r"SCAN-PDF-9d1c4e|rendered image embedded in a PDF"]},
     {"id": 3, "q": "What is the annual average high temperature in Kyoto?",
      "must": [r"21\.0"]},
@@ -53,6 +53,20 @@ CASES = [
     {"id": 13, "q": "Who is the CEO of DuckDocs?", "refusal": True},
 ]
 
+EXPECTED_SOURCES = {
+    1: {"01-native-text.pdf"},
+    2: {"02-scanned-ocr.pdf"},
+    3: {"Kyoto_Japan_itinerary.pdf"},
+    4: {"03-scanned-multipage.pdf"},
+    5: {"08-presentation.pptx"},
+    6: {"06-document.docx"},
+    7: {"06-document.docx", "07-spreadsheet.xlsx"},
+    8: {"07-spreadsheet.xlsx"},
+    9: {"09-data.csv"},
+    10: {"13-config.yaml"},
+    11: {"14-data.xml"},
+}
+
 
 def ask(base, query, timeout):
     body = json.dumps({"query": query, "stream": False}).encode("utf-8")
@@ -67,6 +81,18 @@ def get_json(base, path, timeout):
     req = urllib.request.Request(base.rstrip("/") + path, method="GET")
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def citation_sources(base, resp, timeout):
+    sources = []
+    for citation in resp.get("citations") or []:
+        evidence_id = citation.get("evidence_unit_id") if isinstance(citation, dict) else None
+        if not evidence_id:
+            sources.append("[unknown]")
+            continue
+        evidence = get_json(base, f"/api/v1/evidence/{evidence_id}", timeout)
+        sources.append(str(evidence.get("document_name", "[unknown]")))
+    return sources
 
 
 def preflight(base, timeout):
@@ -98,13 +124,16 @@ def matches_all(patterns, text):
     return all(re.search(p, text, re.IGNORECASE | re.DOTALL) for p in patterns)
 
 
-def grade(case, resp):
+def grade(case, resp, sources=None):
     """Return (result, cited, shown_text)."""
     answer, refused, snippets, _ = split_response(resp)
     shown = answer if answer.strip() else f"[refused: {resp.get('refusal_reason') or 'no reason given'}]"
     if case.get("refusal"):
         return ("PASS" if refused else "FAIL"), "n/a", shown
     if refused:
+        return "FAIL", "NO", shown
+    expected = EXPECTED_SOURCES.get(case["id"])
+    if expected and (not sources or any(source.casefold() not in {item.casefold() for item in expected} for source in sources)):
         return "FAIL", "NO", shown
     cite_ok = "yes" if matches_all(case.get("cite", case["must"]), snippets) else "NO"
     if cite_ok == "NO":
@@ -137,16 +166,17 @@ def main():
         return 2
 
     print(f"Scorecard '{args.label}' against {args.url}\n")
-    print(f"{'#':>2}  {'Result':<8}{'Cited':<6}{'Chunks':>6}{'Secs':>6}  {'Provider':<26}Answer")
-    print("-" * 110)
+    print(f"{'#':>2}  {'Result':<8}{'Cited':<6}{'Chunks':>6}{'Secs':>6}  {'Provider':<26}{'Sources':<34}Answer")
+    print("-" * 155)
     consecutive_timeouts = 0
     for case in cases:
         started = time.time()
-        chunks, provider = "?", ""
+        chunks, provider, sources = "?", "", []
         abort_after_case = False
         try:
             resp = ask(args.url, case["q"], args.timeout)
-            result, cited, shown = grade(case, resp)
+            sources = citation_sources(args.url, resp, args.timeout)
+            result, cited, shown = grade(case, resp, sources)
             chunks = resp.get("retrieved_chunk_count", "?")
             provider_info = resp.get("provider") or {}
             if isinstance(provider_info, dict):
@@ -154,6 +184,7 @@ def main():
             else:
                 provider = str(provider_info)
             raw[case["id"]] = resp
+            raw[case["id"]]["citation_sources"] = sources
             consecutive_timeouts = 0
         except urllib.error.HTTPError as err:
             result, cited = "FAIL", "n/a"
@@ -184,7 +215,9 @@ def main():
             consecutive_timeouts = 0
         elapsed = time.time() - started
         one_line = " ".join(shown.split())[:55]
-        print(f"{case['id']:>2}  {result:<8}{cited:<6}{chunks!s:>6}{elapsed:>6.0f}  {provider[:25]:<26}{one_line}")
+        source_text = ", ".join(dict.fromkeys(sources)) if sources else "n/a"
+        print(f"{case['id']:>2}  {result:<8}{cited:<6}{chunks!s:>6}{elapsed:>6.0f}  "
+              f"{provider[:25]:<26}{source_text[:33]:<34}{one_line}")
         results.append((case["id"], result, cited))
         if abort_after_case:
             break
