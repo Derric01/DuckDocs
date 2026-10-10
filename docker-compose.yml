@@ -33,9 +33,10 @@ services:
       DUCKDOCS_API_PORT: 8000
       DUCKDOCS_FRONTEND_ORIGIN: http://localhost:${DUCKDOCS_FRONTEND_PORT:-3000}
       DUCKDOCS_DATA_ROOT: /app/data
-      DUCKDOCS_LOCAL_MODEL: ${DUCKDOCS_LOCAL_MODEL:-gemma3:1b}
-      DUCKDOCS_CHAT_MODEL: ${DUCKDOCS_CHAT_MODEL:-gemma3:1b}
+      DUCKDOCS_LOCAL_MODEL: ${DUCKDOCS_LOCAL_MODEL:-llama3.2:1b}
+      DUCKDOCS_CHAT_MODEL: ${DUCKDOCS_CHAT_MODEL:-llama3.2:1b}
       DUCKDOCS_EMBED_MODEL: ${DUCKDOCS_EMBED_MODEL:-nomic-embed-text}
+      ANONYMIZED_TELEMETRY: "FALSE"
       OLLAMA_BASE_URL: http://ollama:11434
       DUCKDOCS_CHROMA_URL: http://chromadb:8000
       DUCKDOCS_DB_URL: postgresql+psycopg://${DUCKDOCS_POSTGRES_USER:-duckdocs}:${DUCKDOCS_POSTGRES_PASSWORD:-duckdocs-local-only}@postgres:5432/${DUCKDOCS_POSTGRES_DB:-duckdocs}
@@ -102,7 +103,7 @@ services:
         done
     environment:
       OLLAMA_HOST: http://ollama:11434
-      DUCKDOCS_CHAT_MODEL: ${DUCKDOCS_CHAT_MODEL:-gemma3:1b}
+      DUCKDOCS_CHAT_MODEL: ${DUCKDOCS_CHAT_MODEL:-llama3.2:1b}
       DUCKDOCS_EMBED_MODEL: ${DUCKDOCS_EMBED_MODEL:-nomic-embed-text}
     depends_on:
       ollama:

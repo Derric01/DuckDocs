@@ -19,8 +19,8 @@ class Settings:
     frontend_origin: str = "http://localhost:3000"
     data_root: Path = Path("data")
     max_file_size: int = 50 * 1024 * 1024
-    local_model: str = "gemma3:1b"
-    chat_model: str = "gemma3:1b"
+    local_model: str = "llama3.2:1b"
+    chat_model: str = "llama3.2:1b"
     embed_model: str = "nomic-embed-text"
     ollama_base_url: str = "http://localhost:11434"
     top_k: int = 12
@@ -52,8 +52,8 @@ class Settings:
             frontend_origin=os.getenv("DUCKDOCS_FRONTEND_ORIGIN", "http://localhost:3000"),
             data_root=data_root,
             max_file_size=int(os.getenv("DUCKDOCS_MAX_FILE_SIZE", str(50 * 1024 * 1024))),
-            local_model=os.getenv("DUCKDOCS_LOCAL_MODEL", "gemma3:1b"),
-            chat_model=os.getenv("DUCKDOCS_CHAT_MODEL", os.getenv("DUCKDOCS_LOCAL_MODEL", "gemma3:1b")),
+            local_model=os.getenv("DUCKDOCS_LOCAL_MODEL", "llama3.2:1b"),
+            chat_model=os.getenv("DUCKDOCS_CHAT_MODEL", os.getenv("DUCKDOCS_LOCAL_MODEL", "llama3.2:1b")),
             embed_model=os.getenv("DUCKDOCS_EMBED_MODEL", "nomic-embed-text"),
             ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/"),
             top_k=int(os.getenv("DUCKDOCS_TOP_K", "12")),
