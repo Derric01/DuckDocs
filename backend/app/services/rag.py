@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+import json
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from itertools import combinations
+from difflib import SequenceMatcher
 from typing import Literal
 from uuid import uuid4
 
@@ -18,6 +20,13 @@ from app.services.vector_store import RetrievedChunk, VectorStore, relevance_buc
 
 CITATION_RE = re.compile(r"\[chunk:([^\]]+)\]")
 logger = logging.getLogger("duckdocs.rag")
+
+
+def _generate_chat(chat: object, prompt: str) -> Iterator[str] | str:
+    generate = getattr(chat, "generate")
+    if getattr(chat, "ref", {}).get("provider_type") == "ollama":
+        return generate(prompt, stream=False, structured_output=True)
+    return generate(prompt, stream=False)
 
 
 @dataclass(slots=True)
@@ -48,6 +57,37 @@ class GroundingGate:
         stripped = raw_output.strip()
         if stripped == "INSUFFICIENT_EVIDENCE" or stripped.startswith("INSUFFICIENT_EVIDENCE"):
             return GateResult(outcome="insufficient_evidence", text=None, cited_ids=[], reason="model_declined")
+
+        structured = _parse_structured_claims(stripped)
+        if structured is not None:
+            verified: list[tuple[str, str]] = []
+            for claim, evidence_id, quote in structured:
+                if evidence_id not in allowed_chunk_ids or not evidence_by_id:
+                    continue
+                source = evidence_by_id.get(evidence_id, "")
+                if _quote_matches(quote, source):
+                    verified.append((claim, evidence_id))
+            if not verified:
+                return GateResult(
+                    outcome="insufficient_evidence",
+                    text=None,
+                    cited_ids=[],
+                    reason="no_verified_claims",
+                )
+            normalized = " ".join(f"{claim.rstrip('.!?')} [chunk:{evidence_id}]." for claim, evidence_id in verified)
+            return GateResult(
+                outcome="grounded",
+                text=normalized,
+                cited_ids=list(dict.fromkeys(evidence_id for _, evidence_id in verified)),
+            )
+
+        if _looks_like_junk_output(stripped, query):
+            return GateResult(
+                outcome="insufficient_evidence",
+                text=None,
+                cited_ids=[],
+                reason="content_not_grounded",
+            )
 
         cited_ids = CITATION_RE.findall(raw_output)
         canonical_ids: dict[str, str] = {}
@@ -112,7 +152,59 @@ class GroundingGate:
                 reason="citation_density_low",
             )
 
+        if task == "ask" and not cited_ids:
+            return GateResult(
+                outcome="insufficient_evidence",
+                text=None,
+                cited_ids=[],
+                reason="no_verified_claims",
+            )
         return GateResult(outcome="grounded", text=raw_output, cited_ids=list(dict.fromkeys(cited_ids)))
+
+
+def _parse_structured_claims(raw_output: str) -> list[tuple[str, str, str]] | None:
+    if not raw_output.startswith("{"):
+        return None
+    try:
+        payload = json.loads(raw_output)
+    except json.JSONDecodeError:
+        return []
+    claims = payload.get("claims") if isinstance(payload, dict) else None
+    if not isinstance(claims, list):
+        return []
+    parsed: list[tuple[str, str, str]] = []
+    for item in claims:
+        if not isinstance(item, dict):
+            continue
+        claim = item.get("claim") or item.get("text")
+        evidence_id = item.get("evidence_id") or item.get("evidence")
+        quote = item.get("quote")
+        if all(isinstance(value, str) and value.strip() for value in (claim, evidence_id, quote)):
+            parsed.append((claim.strip(), evidence_id.strip(), quote.strip()))
+    return parsed
+
+
+def _quote_matches(quote: str, source: str) -> bool:
+    normalized_quote = " ".join(quote.lower().split())
+    normalized_source = " ".join(source.lower().split())
+    if not normalized_quote or not normalized_source:
+        return False
+    if normalized_quote in normalized_source:
+        return True
+    return SequenceMatcher(None, normalized_quote, normalized_source).ratio() >= 0.9
+
+
+def _looks_like_junk_output(output: str, query: str | None) -> bool:
+    clean = CITATION_RE.sub("", output).strip(" \t\r\n.")
+    if re.search(r"^(?:question|answer|context):", clean, flags=re.IGNORECASE | re.MULTILINE):
+        return True
+    if query and " ".join(clean.lower().split()) == " ".join(query.lower().split()):
+        return True
+    if re.match(r"^(?:i am|i found|i can|i will|as an ai|based on the evidence|the answer is)", clean, flags=re.I):
+        return True
+    if re.fullmatch(r"the record identifies the .+ department", clean, flags=re.I):
+        return True
+    return False
 
 
 def _claims_match_evidence(
@@ -214,7 +306,16 @@ def select_evidence_passage(query: str, answer: str, snippet: str) -> str:
     answer_overlap = [len(terms & answer_terms) for _, terms in candidates]
     best_answer_overlap = max(answer_overlap, default=0)
     if best_answer_overlap == 0:
-        return ""
+        query_overlap = [len(terms & query_terms) for _, terms in candidates]
+        best_query_overlap = max(query_overlap, default=0)
+        if best_query_overlap == 0:
+            return ""
+        selected = [
+            text.rstrip(".!? ")
+            for (text, _), overlap in zip(candidates, query_overlap, strict=True)
+            if overlap == best_query_overlap
+        ]
+        return " ".join(dict.fromkeys(selected))
     answer_overlap_required = max(1, min(2, best_answer_overlap - 1))
     selected = [
         text.rstrip(".!? ") for (text, terms), overlap in zip(candidates, answer_overlap, strict=True)
@@ -272,14 +373,10 @@ def build_ask_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
         )
     context = "\n\n".join(blocks)
     return (
-        "You are DuckDocs Waymark. Answer ONLY from the provided context.\n"
-        "Cite every factual claim with [chunk:<id>] using only IDs present in the context.\n"
-        "Answer in one concise sentence unless the question explicitly asks for an aggregation or explanation.\n"
-        "If the context is insufficient, reply with exactly INSUFFICIENT_EVIDENCE.\n\n"
-        "Citation format example:\n"
-        "Question: What department does the record identify?\n"
-        "Answer: The record identifies the Engineering department. [chunk:ev_example]\n"
-        "Use the same [chunk:<id>] format with a real context ID in your answer.\n\n"
+        "Answer only from the provided context.\n"
+        "Return a JSON object with a claims array. Each claim must contain "
+        "claim, evidence_id, and a short verbatim quote from that evidence.\n"
+        "If the context is insufficient, return {\"claims\":[]}.\n\n"
         f"Question: {query}\n\nContext:\n{context}\n\nAnswer:"
     )
 
@@ -455,7 +552,7 @@ class RagService:
 
         prompt = build_ask_prompt(query, chunks)
         try:
-            raw = chat.generate(prompt, stream=False)
+            raw = _generate_chat(chat, prompt)
         except Exception:
             logger.exception("Chat generation failed before grounding gate")
             # Missing model / Ollama failure: fall back to local extractive synthesis.
@@ -481,7 +578,7 @@ class RagService:
                 f"Valid chunk IDs are: {', '.join(sorted(allowed))}."
             )
             try:
-                corrected = chat.generate(correction_prompt, stream=False)
+                corrected = _generate_chat(chat, correction_prompt)
                 corrected_text = corrected if isinstance(corrected, str) else "".join(corrected)
                 gate = self.gate.validate(
                     corrected_text, allowed, task="ask", evidence_by_id=evidence_by_id, query=query
@@ -526,6 +623,24 @@ class RagService:
             )
 
         citations = self._bind_citations(gate.cited_ids, chunks, query, gate.text or "")
+        if not citations:
+            return GroundedResponse(
+                id=response_id,
+                kind="ask",
+                query=query,
+                outcome="insufficient_evidence",
+                answer=None,
+                grounded=False,
+                citations=[],
+                retrieved_chunk_count=len(chunks),
+                provider=provider_meta,
+                created_at=now,
+                refusal_reason="no_verified_claims",
+                diagnostic={
+                    "top_score": max(chunk.score for chunk in chunks),
+                    "threshold": self.settings.min_similarity,
+                },
+            )
         confidence = score_confidence(chunks, gate.cited_ids)
         # Removing inline [chunk:id] markers leaves the whitespace that
         # preceded them, which otherwise shows up as "... 18 months ."
@@ -593,7 +708,13 @@ class RagService:
                     claim_parts.append(answer_sentences[index - 1])
             snippet = select_evidence_passage(query, " ".join(claim_parts) or answer, evidence.snippet)
             if not snippet:
-                logger.warning("No precise source passage matched citation %s; returning an empty quote", evidence.id)
+                # Derived answers may not repeat the source's literal values.
+                # Use the query to select a source span, but never emit an
+                # unverified empty citation.
+                snippet = select_evidence_passage(query, query, evidence.snippet)
+            if not snippet:
+                logger.warning("No precise source passage matched citation %s; dropping citation", evidence.id)
+                continue
             citations.append(
                 Citation(
                     id=f"cit_{uuid4().hex[:10]}",
