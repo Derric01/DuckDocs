@@ -97,6 +97,10 @@ def _most_relevant_sentence(
         "at", "in", "of", "for", "to", "and", "it", "on",
     }
     terms = _content_terms(question, stop_words)
+    format_hint = next(
+        (extension for extension in ("xml", "yaml", "json", "csv") if extension in question.lower()),
+        None,
+    )
     is_why_question = bool(re.search(r"\bwhy\b", question, flags=re.I))
     causal_cues = {
         "because", "since", "therefore", "caused", "cause", "reason", "result", "resulted", "led",
@@ -118,6 +122,12 @@ def _most_relevant_sentence(
                 log((document_count + 1) / (term_document_frequency.get(term, 0) + 1)) + 1
                 for term in terms & sentence_terms
             ) if document_count else len(terms & sentence_terms)
+            if format_hint == "xml" and "<" in sentence and ">" in sentence:
+                score += 3
+            elif format_hint in {"yaml", "json"} and ":" in sentence:
+                score += 2
+            elif format_hint == "csv" and "|" in sentence:
+                score += 2
             if is_why_question:
                 # A causal/decision question is best answered by the passage
                 # stating the recommendation or reason, rather than a nearby

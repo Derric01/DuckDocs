@@ -5,7 +5,7 @@ from pathlib import Path
 from app.core.config import Settings
 from app.domain.models import Evidence
 from app.repositories.memory import DocumentRepository
-from app.services.rag import RagService
+from app.services.rag import GroundingGate, RagService, select_evidence_passage
 from app.services.vector_store import RetrievedChunk, VectorStore
 
 
@@ -179,6 +179,30 @@ def test_document_hints_reject_wrong_format_and_page_citations() -> None:
     service = _service([_evidence("ev_scanned", "03-scanned-multipage.pdf", "Page marker: SCAN-PAGE-2-b82e")])
     response = service.ask("What is the marker on page 2 of the scanned multi-page document?")
     assert response.outcome == "insufficient_evidence"
+
+
+def test_vacuous_slide_answer_is_rejected() -> None:
+    evidence = _evidence("ev_slide", "08-presentation.pptx", "Slide 3: Final marker PPTX-SLIDE3-ce02")
+    gate = GroundingGate()
+    result = gate.validate(
+        '{"answer":"Slide 3.","evidence_ids":[1]}',
+        {"1"},
+        evidence_by_id={"1": evidence.snippet},
+        query="What's written in the presentation's third slide?",
+        evidence_metadata={"1": evidence},
+    )
+    assert result.outcome == "insufficient_evidence"
+    assert result.reason == "content_not_informative"
+
+
+def test_answer_marker_must_appear_in_selected_quote() -> None:
+    snippet = "The scanned OCR page contains the test marker SCAN-PDF-9d1c4e."
+    selected = select_evidence_passage(
+        "What is the test marker in the scanned OCR PDF?",
+        "The test marker is SCAN-PDF-9d1c4e.",
+        snippet,
+    )
+    assert "SCAN-PDF-9d1c4e" in selected
 
 
 def test_revenue_sum_is_grounded_as_synthesized_answer() -> None:

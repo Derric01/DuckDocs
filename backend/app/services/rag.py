@@ -99,6 +99,13 @@ class GroundingGate:
         simple = _parse_simple_answer(stripped)
         if simple is not None:
             answer, cited_ids = simple
+            if _answer_adds_no_information(answer, query):
+                return GateResult(
+                    outcome="insufficient_evidence",
+                    text=None,
+                    cited_ids=[],
+                    reason="content_not_informative",
+                )
             cited_ids = [
                 evidence_id
                 for evidence_id in cited_ids
@@ -178,7 +185,15 @@ class GroundingGate:
                     and CITATION_RE.fullmatch(sentences[index + 1].strip(" ."))
                 )
             ]
-            if factual and len(uncited) / max(1, len(factual)) > 0.6:
+            structured_context = (
+                evidence_metadata
+                and any(
+                    _is_structured_document(evidence_metadata.get(evidence_id))
+                    for evidence_id in cited_ids
+                )
+                and _looks_like_structured_answer(stripped)
+            )
+            if factual and len(uncited) / max(1, len(factual)) > 0.6 and not structured_context:
                 return GateResult(
                     outcome="insufficient_evidence",
                     text=None,
@@ -309,6 +324,34 @@ def _looks_like_junk_output(output: str, query: str | None) -> bool:
     if re.fullmatch(r"the record identifies the .+ department", clean, flags=re.I):
         return True
     return False
+
+
+def _answer_adds_no_information(answer: str, query: str | None) -> bool:
+    if not query:
+        return False
+
+    def normalized_terms(value: str) -> set[str]:
+        ordinal_numbers = {
+            "first": "1", "second": "2", "third": "3", "fourth": "4",
+            "fifth": "5", "sixth": "6", "seventh": "7", "eighth": "8",
+            "ninth": "9", "tenth": "10",
+        }
+        terms = set(re.findall(r"[a-z0-9]+", value.lower()))
+        return {ordinal_numbers.get(term, term) for term in terms if term not in _GROUNDING_STOP_WORDS}
+
+    answer_terms = normalized_terms(answer)
+    query_terms = normalized_terms(query)
+    return bool(answer_terms) and answer_terms <= query_terms
+
+
+def _is_structured_document(evidence: Evidence | None) -> bool:
+    if evidence is None or "." not in evidence.document_name:
+        return False
+    return evidence.document_name.rsplit(".", 1)[-1].lower() in {"xml", "yaml", "yml", "json", "csv"}
+
+
+def _looks_like_structured_answer(value: str) -> bool:
+    return bool(re.search(r"<[a-z][^>]*>|[a-z][\w.-]*\s*:\s*[^:\n]+|\|[^|]+\|", value, re.I))
 
 
 def _claims_match_evidence(
@@ -956,6 +999,9 @@ class RagService:
                 # Use the query to select a source span, but never emit an
                 # unverified empty citation.
                 snippet = select_evidence_passage(query, query, evidence.snippet)
+            if snippet and not _answer_value_is_cited(answer, snippet):
+                logger.warning("Citation %s does not contain a specific answer value; dropping citation", evidence.id)
+                snippet = ""
             if not snippet:
                 logger.warning("No precise source passage matched citation %s; dropping citation", evidence.id)
                 continue
@@ -969,3 +1015,23 @@ class RagService:
             )
             ordinal += 1
         return citations
+
+
+def _answer_value_is_cited(answer: str, snippet: str) -> bool:
+    """Require distinctive answer values, such as markers, in displayed evidence."""
+    answer_terms = {
+        term.lower().rstrip(".,;:!?")
+        for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", CITATION_RE.sub("", answer))
+        if len(term) >= 6 and any(char.isdigit() for char in term)
+    }
+    if not answer_terms:
+        return True
+    if re.search(r"\b(?:total|sum|average|mean|count)\b", answer, re.I) and all(
+        term.isdigit() for term in answer_terms
+    ):
+        return True
+    snippet_terms = {
+        term.lower()
+        for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", snippet)
+    }
+    return answer_terms <= snippet_terms

@@ -133,7 +133,9 @@ def grade(case, resp, sources=None):
     if refused:
         return "FAIL", "NO", shown
     expected = EXPECTED_SOURCES.get(case["id"])
-    if expected and (not sources or any(source.casefold() not in {item.casefold() for item in expected} for source in sources)):
+    expected_lower = {item.casefold() for item in expected or ()}
+    source_lower = {source.casefold() for source in sources}
+    if expected and not source_lower & expected_lower:
         return "FAIL", "NO", shown
     cite_ok = "yes" if matches_all(case.get("cite", case["must"]), snippets) else "NO"
     if cite_ok == "NO":
@@ -141,6 +143,8 @@ def grade(case, resp, sources=None):
     if not matches_all(case["must"], answer):
         return "FAIL", cite_ok, shown
     if any(re.search(p, answer, re.IGNORECASE) for p in case.get("must_not", [])):
+        return "PARTIAL", cite_ok, shown
+    if expected and source_lower - expected_lower:
         return "PARTIAL", cite_ok, shown
     return "PASS", cite_ok, shown
 

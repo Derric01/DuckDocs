@@ -140,6 +140,85 @@ The remaining Q1/Q11 citation-density refusals and Q5 short answer are
 grounding/output-quality issues for later phases; this phase did not weaken
 the fail-closed gate.
 
+## Phase 4b follow-up
+
+Phase 4b addressed the regressions identified against the Phase 2b baseline:
+
+- Model answers whose content adds no information beyond the question are now
+  rejected and sent through the extractive fallback. This fixes the grounded
+  but useless `Slide 3.` response for Q5.
+- Structured evidence answers may pass density validation when the cited
+  evidence is XML, YAML, JSON, or CSV and the answer contains structured
+  content. The prior Phase 4 refusal happened because the extractive XML
+  response was treated as a sequence of factual text without sufficient
+  sentence-level citation coverage, so `citation_density_low` discarded it.
+- Displayed citations now require distinctive answer values such as marker
+  tokens to occur in the selected stored snippet. If the value is absent, the
+  citation is dropped and the response fails closed; derived totals remain
+  valid when their source rows support the calculation.
+- Scorecard source grading now returns PARTIAL when the expected source is
+  cited together with unrelated sources, and FAIL only when the expected
+  source is absent.
+
+### Phase 4b scorecard runs
+
+The backend image was rebuilt before each run. The results were identical:
+
+| Q | Result | Cited | Sources | Provider | Chunks | Secs | Answer start | Phase 2b comparison |
+|---:|---|---|---|---|---:|---:|---|---|
+| 1 | FAIL | NO | n/a | extractive evidence_synth | 12 | 5 / 3 | [refused: citation_density_low] | FAIL |
+| 2 | FAIL | NO | n/a | ollama llama3.2:1b | 12 | 6 / 3 | [refused: no_verified_claims] | FAIL |
+| 3 | PASS | yes | Kyoto_Japan_itinerary.pdf | ollama llama3.2:1b | 12 | 12 / 3 | The annual average high temperature in Kyoto is 21.0°C | PASS |
+| 4 | PASS | yes | 03-scanned-multipage.pdf | extractive evidence_synth | 12 | 5 / 3 | Page marker:SCAN-PAGE-2-b82e | PASS |
+| 5 | PASS | yes | 08-presentation.pptx | extractive evidence_synth | 11 | 4 / 2 | Slide 3 Slide 3: Final marker Test marker: PPTX-SLIDE3- | **REGRESSION FIXED: FAIL -> PASS** |
+| 6 | FAIL | NO | 06-document.docx | extractive evidence_synth | 11 | 5 / 2 | DuckDocs Test File - Word Document This DOCX tests para | FAIL |
+| 7 | PASS | yes | 07-spreadsheet.xlsx | extractive evidence_synth | 12 | 5 / 3 | Sheet: Inventory SKU \| Item \| Stock A-100 \| Widget A \| | PASS |
+| 8 | FAIL | yes | 07-spreadsheet.xlsx | extractive evidence_synth | 12 | 5 / 2 | Sheet: Sales Month \| Revenue \| Units Jan \| 12000 \| 340 | FAIL |
+| 9 | PARTIAL | yes | 09-data.csv | extractive evidence_synth | 11 | 5 / 3 | id \| name \| department \| salary 1 \| Asha Rao \| Engineer | PARTIAL |
+| 10 | PARTIAL | yes | 13-config.yaml | extractive evidence_synth | 12 | 4 / 3 | test_file: 13-config.yaml purpose: structured extractio | PARTIAL |
+| 11 | PARTIAL | yes | 14-data.xml | extractive evidence_synth | 11 | 2 / 2 | <?xml version="1.0"?> <root> <marker>XML-MARKER-6f3c</m | **REGRESSION FIXED: FAIL/refused -> PARTIAL** |
+| 12 | FAIL | n/a | 12-notes.md | extractive evidence_synth | 11 | 5 / 3 | # DuckDocs Test File - Markdown This tests plain text/m | FAIL |
+| 13 | FAIL | n/a | 12-notes.md | extractive evidence_synth | 11 | 5 / 3 | # DuckDocs Test File - Markdown This tests plain text/m | FAIL |
+
+**Each Phase 4b run:** 4 PASS, 3 PARTIAL, 6 FAIL; zero passing answers had
+wrong or missing citations. Compared with Phase 2b's 4 PASS, 3 PARTIAL, 6
+FAIL measurement, Q5 and Q11 are no longer regressions. Q2 now correctly
+fails closed because its answer's marker was not present in the selected
+stored quote.
+
+### Q1 and refusal-threshold measurements
+
+For Q1, `01-native-text.pdf` was **not** among the top five retrieved
+passages. The post-fusion top five were:
+
+`12-notes.md 1.000; 02-scanned-ocr.pdf 1.000; 11-page.html 1.000;
+08-presentation.pptx 1.000; 03-scanned-multipage.pdf 1.000`.
+
+The native PDF was therefore missed during retrieval, rather than rejected by
+the grounding gate. This is a retrieval-ranking issue, not a citation
+verification failure.
+
+Q12 and Q13 remained non-answerable but retrieved neighboring evidence:
+
+| Question | Top-five documents and scores |
+|---:|---|
+| 12 | Kyoto_Japan_itinerary.pdf 1.000; Kyoto_Japan_itinerary.pdf 0.984; 12-notes.md 0.968; Kyoto_Japan_itinerary.pdf 0.953; Kyoto_Japan_itinerary.pdf 0.938 |
+| 13 | 14-data.xml 1.000; 12-notes.md 0.984; 09-data.csv 0.968; 13-config.yaml 0.953; Kyoto_Japan_itinerary.pdf 0.938 |
+
+These scores overlap the answerable questions substantially, so a single
+retrieval threshold cannot separate the refusal cases. Refusal calibration
+and IDF-weighted lexical support remain Phase 3 work.
+
+### Test environments
+
+The mandated backend-container run passed: **146 passed, 7 warnings** using
+Python 3.12 after rebuilding the image and copying `backend/tests` into the
+container. The earlier host-only failures are not the Phase 4b headline:
+the host has `rapidocr-onnxruntime 1.2.3` and `chromadb 1.5.9`, while the
+backend project pins `rapidocr-onnxruntime==1.4.4` and
+`chromadb==0.5.23`. The RapidOCR spacing and image keyword failures were
+therefore environment-specific.
+
 ## Phase 2b structured-answer diagnosis and result
 
 The throwaway diagnostic ran the same retrieval, prompt construction, and Ollama
