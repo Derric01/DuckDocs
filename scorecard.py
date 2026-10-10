@@ -33,7 +33,7 @@ CASES = [
      "must": [r"SCAN-PAGE-2-b82e"]},
     {"id": 5, "q": "What's written in the presentation's third slide?",
      "must": [r"PPTX-SLIDE3-ce02"]},
-    {"id": 6, "q": "What does the second paragraph after the page break say in the Word document?",
+    {"id": 6, "q": "What does the paragraph on the second page of the Word document say?",
      "must": [r"new page|page-break awareness"]},
     {"id": 7, "q": "How many units of Widget A are in stock?",
      "must": [r"\b12\b"], "cite": [r"Widget A"]},
