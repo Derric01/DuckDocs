@@ -219,6 +219,76 @@ backend project pins `rapidocr-onnxruntime==1.4.4` and
 `chromadb==0.5.23`. The RapidOCR spacing and image keyword failures were
 therefore environment-specific.
 
+## Phase 4c retrieval signals and citation re-selection
+
+Phase 4c applies document-format, native/scanned, page, and slide hints before
+vector and keyword top-k truncation. Native-text PDF means a PDF evidence unit
+whose metadata is not `ocr_dependent`; scanned means `ocr_dependent`. Keyword
+coverage is IDF-weighted across unique library documents. Retrieved chunks now
+carry raw vector cosine and lexical coverage alongside the fused rank score.
+The displayed quote is re-selected from the cited passage when a distinctive
+answer value is present there but was omitted from the first selected span.
+
+The backend image was rebuilt before each run. Both runs were identical:
+
+| Q | Result | Cited | Sources | Provider | Chunks | Secs 1 / 2 | Answer start | dbc914c |
+|---:|---|---|---|---|---:|---:|---|---|
+| 1 | FAIL | NO | n/a | extractive evidence_synth | 4 | 23 / 2 | [refused: no_verified_claims] | FAIL |
+| 2 | PASS | yes | 02-scanned-ocr.pdf | ollama llama3.2:1b | 6 | 6 / 3 | The test marker in the scanned OCR PDF is SCAN-PDF-9d1c | FAIL |
+| 3 | PASS | yes | Kyoto_Japan_itinerary.pdf | ollama llama3.2:1b | 12 | 12 / 3 | The annual average high temperature in Kyoto is 21.0°C | PASS |
+| 4 | PASS | yes | 03-scanned-multipage.pdf | extractive evidence_synth | 3 | 8 / 6 | Page marker:SCAN-PAGE-2-b82e | PASS |
+| 5 | PASS | yes | 08-presentation.pptx | extractive evidence_synth | 3 | 2 / 2 | Slide 3 Slide 3: Final marker Test marker: PPTX-SLIDE3- | PASS |
+| 6 | FAIL | NO | 06-document.docx | extractive evidence_synth | 2 | 3 / 3 | DuckDocs Test File - Word Document This DOCX tests para | FAIL |
+| 7 | PASS | yes | 07-spreadsheet.xlsx | extractive evidence_synth | 12 | 5 / 3 | Sheet: Inventory SKU \| Item \| Stock A-100 \| Widget A \| | PASS |
+| 8 | FAIL | yes | 07-spreadsheet.xlsx | extractive evidence_synth | 3 | 3 / 2 | Sheet: Sales Month \| Revenue \| Units Jan \| 12000 \| 340 | FAIL |
+| 9 | PARTIAL | yes | 09-data.csv | extractive evidence_synth | 12 | 5 / 3 | id \| name \| department \| salary 1 \| Asha Rao \| Engineer | PARTIAL |
+| 10 | PARTIAL | yes | 13-config.yaml | extractive evidence_synth | 1 | 2 / 2 | test_file: 13-config.yaml purpose: structured extractio | FAIL |
+| 11 | PARTIAL | yes | 14-data.xml | extractive evidence_synth | 1 | 3 / 2 | <?xml version="1.0"?> <root> <marker>XML-MARKER-6f3c</m | PARTIAL |
+| 12 | FAIL | n/a | 12-notes.md | extractive evidence_synth | 12 | 5 / 3 | # DuckDocs Test File - Markdown This tests plain text/m | FAIL |
+| 13 | FAIL | n/a | 12-notes.md | extractive evidence_synth | 12 | 5 / 3 | # DuckDocs Test File - Markdown This tests plain text/m | FAIL |
+
+Each run: **5 PASS, 3 PARTIAL, 5 FAIL**, with zero passing answers carrying
+wrong or missing citations. Against the verified `dbc914c` result of **4 PASS,
+2 PARTIAL, 7 FAIL**, Q2 improved from FAIL to PASS and Q10 improved from FAIL
+to PARTIAL; there were no regressions in Q5 or Q11 and no aggregate
+regressions.
+
+### Absolute retrieval signals
+
+The scorecard columns `Cos` and `Lex` are the top-ranked chunk's raw cosine
+and IDF-weighted lexical coverage. Values were identical in both runs:
+
+| Q | Raw cosine | Lexical coverage |
+|---:|---:|---:|
+| 1 | 0.4898 | 0.0000 |
+| 2 | 0.0000 | 0.4430 |
+| 3 | 0.0000 | 0.8170 |
+| 4 | 0.0000 | 0.4026 |
+| 5 | 0.6816 | 0.0000 |
+| 6 | 0.0000 | 0.4429 |
+| 7 | 0.0000 | 0.2542 |
+| 8 | 0.0000 | 0.2277 |
+| 9 | 0.0000 | 0.1555 |
+| 10 | 0.7708 | 0.0000 |
+| 11 | 0.6297 | 0.0000 |
+| 12 | 0.6269 | 0.0000 |
+| 13 | 0.5936 | 0.0000 |
+
+Q12/Q13 have raw cosine values overlapping answerable questions, while their
+lexical coverage is zero. This supports combining absolute signals rather than
+selecting a single fused-score threshold; refusal calibration remains Phase 3.
+
+Q1's candidate filter now restricts retrieval to non-OCR PDFs, but the
+currently loaded library has no evidence units for `01-native-text.pdf`
+despite the document being reported `ready`; its candidate set therefore
+contains the other native-text PDF evidence. This data/index inconsistency is
+why Q1 still has no citation and requires investigation before treating the
+retrieval rule as fully validated.
+
+### Container validation
+
+The rebuilt backend container suite passed: **148 passed, 7 warnings**.
+
 ## Phase 2b structured-answer diagnosis and result
 
 The throwaway diagnostic ran the same retrieval, prompt construction, and Ollama
