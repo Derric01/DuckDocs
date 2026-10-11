@@ -268,6 +268,65 @@ and IDF-weighted lexical coverage. Values were identical in both runs:
 | 6 | 0.0000 | 0.4429 |
 | 7 | 0.0000 | 0.2542 |
 | 8 | 0.0000 | 0.2277 |
+
+## Phase 4d indexing and evidence-selection result
+
+Phase 4d now verifies persisted evidence before marking a document Ready,
+exposes read-only evidence counts for scorecard preflight, computes both
+absolute retrieval signals for every candidate, derives format hints from
+library extensions plus synonyms, accepts grounded JSON key/value answers, and
+keeps adjacent entity context in extractive citations. The backend image was
+rebuilt before each run. The container test suite reported:
+`155 passed, 7 warnings in 34.41s`.
+
+Both scorecard runs produced **4 PASS, 2 PARTIAL, 7 FAIL**, with zero passing
+answers carrying a wrong or missing citation. The per-question result was
+identical; seconds varied slightly:
+
+| Q | Result | Cited | Sources | Provider | Chunks | Secs 1 / 2 | Answer start | dbc914c | 3cd493b |
+|---:|---|---|---|---|---:|---:|---|---|---|
+| 1 | PASS | yes | 01-native-text.pdf | extractive evidence_synth | 5 | 9 / 7 | Test marker: NATIVE-PDF-7f3a2b. | FAIL | FAIL |
+| 2 | FAIL | NO | n/a | extractive evidence_synth | 4 | 3 / 3 | [refused: no_verified_claims] | FAIL | FAIL |
+| 3 | PASS | yes | Kyoto_Japan_itinerary.pdf | ollama llama3.2:1b | 12 | 3 / 3 | The annual average high temperature in Kyoto is 21.0°C | PASS | PASS |
+| 4 | PASS | yes | 03-scanned-multipage.pdf | extractive evidence_synth | 3 | 7 / 7 | Page marker:SCAN-PAGE-2-b82e Use this file to test DUCK | PASS | PASS |
+| 5 | FAIL | NO | n/a | extractive evidence_synth | 3 | 2 / 3 | [refused: no_verified_claims] | PASS | PASS |
+| 6 | FAIL | NO | 06-document.docx | extractive evidence_synth | 2 | 3 / 2 | Second paragraph with a page break coming next. | FAIL | FAIL |
+| 7 | PASS | yes | 07-spreadsheet.xlsx | extractive evidence_synth | 12 | 3 / 3 | Sheet: Inventory SKU \| Item \| Stock A-100 \| Widget A \| | PASS | PASS |
+| 8 | FAIL | yes | 07-spreadsheet.xlsx | extractive evidence_synth | 3 | 4 / 2 | Sheet: Sales Month \| Revenue \| Units Jan \| 12000 \| 340 | FAIL | FAIL |
+| 9 | PARTIAL | yes | 09-data.csv | extractive evidence_synth | 12 | 3 / 3 | id \| name \| department \| salary 1 \| Asha Rao \| Engineer | PARTIAL | PARTIAL |
+| 10 | PARTIAL | yes | 13-config.yaml | extractive evidence_synth | 3 | 3 / 3 | test_file: 13-config.yaml purpose: structured extractio | FAIL | PARTIAL |
+| 11 | FAIL | NO | n/a | extractive evidence_synth | 1 | 3 / 2 | [refused: no_verified_claims] | PARTIAL | PARTIAL |
+| 12 | FAIL | n/a | 12-notes.md | extractive evidence_synth | 12 | 3 / 3 | # DuckDocs Test File - Markdown This tests plain text/m | FAIL | FAIL |
+| 13 | FAIL | n/a | 12-notes.md | extractive evidence_synth | 12 | 3 / 3 | # DuckDocs Test File - Markdown This tests plain text/m | FAIL | FAIL |
+
+### Phase 4d top-five candidates
+
+Each entry is `document fused/raw-cosine/lexical-coverage`; maxima are over
+the five displayed candidates. These are document names and numeric signals
+only, with no passage text.
+
+| Q | Top five candidates | Max cosine / lexical |
+|---:|---|---:|
+| 1 | 01-native-text.pdf 1.0/0.7435/1.0; Kyoto_Japan_itinerary.pdf 1.0/0.4898/0.1053; Kyoto_Japan_itinerary.pdf 1.0/0.4097/0.3186; Kyoto_Japan_itinerary.pdf 1.0/0.3784/0.3186; Kyoto_Japan_itinerary.pdf 1.0/0.359/0.3186 | 0.7435 / 1.0000 |
+| 2 | 02-scanned-ocr.pdf 1.0/0.8014/0.4876; 03-scanned-multipage.pdf 1.0/0.7429/0.5144; 03-scanned-multipage.pdf 1.0/0.7359/0.5144; 03-scanned-multipage.pdf 1.0/0.7282/0.5144 | 0.8014 / 0.5144 |
+| 3 | Kyoto_Japan_itinerary.pdf 1.0/0.8328/0.853; Kyoto_Japan_itinerary.pdf 0.9839/0.6199/0.2652; Kyoto_Japan_itinerary.pdf 0.9683/0.5964/0.2652; Kyoto_Japan_itinerary.pdf 0.9531/0.546/0.2652; Kyoto_Japan_itinerary.pdf 0.9385/0.5393/0.4122 | 0.8328 / 0.8530 |
+| 4 | 03-scanned-multipage.pdf 1.0/0.7325/0.4375; 03-scanned-multipage.pdf 1.0/0.724/0.4375; 03-scanned-multipage.pdf 1.0/0.7183/0.4375 | 0.7325 / 0.4375 |
+| 5 | 08-presentation.pptx 1.0/0.6816/0.3258; 08-presentation.pptx 1.0/0.5819/0.3258; 08-presentation.pptx 1.0/0.4922/0.3258 | 0.6816 / 0.3258 |
+| 6 | 06-document.docx 1.0/0.6486/0.456; 06-document.docx 1.0/0.6039/0.2532 | 0.6486 / 0.4560 |
+| 7 | 07-spreadsheet.xlsx 1.0/0.6279/0.2565; 06-document.docx 1.0/0.5951/0.2565; 13-config.yaml 0.9683/0.487/0.0; 07-spreadsheet.xlsx 0.9531/0.4815/0.1593; Kyoto_Japan_itinerary.pdf 0.9385/0.4641/0.0 | 0.6279 / 0.2565 |
+| 8 | 07-spreadsheet.xlsx 1.0/0.8089/0.2405; 07-spreadsheet.xlsx 1.0/0.4779/0.0802; 09-data.csv 1.0/0.4706/0.0 | 0.8089 / 0.2405 |
+| 9 | 09-data.csv 1.0/0.7435/0.1648; 12-notes.md 0.9839/0.4378/0.0; 11-page.html 0.9683/0.4166/0.0; 02-scanned-ocr.pdf 0.9531/0.4127/0.0; 01-native-text.pdf 0.9385/0.4064/0.2036 | 0.7435 / 0.2036 |
+| 10 | 13-config.yaml 1.0/0.7708/0.4208; 14-data.xml 0.9839/0.5862/0.0184; 10-data.json 0.9683/0.5298/0.0517 | 0.7708 / 0.4208 |
+| 11 | 14-data.xml 1.0/0.6297/0.1358 | 0.6297 / 0.1358 |
+| 12 | 12-notes.md 1.0/0.6269/0.0702; 01-native-text.pdf 0.9839/0.6/0.3238; 11-page.html 0.9683/0.5968/0.0702; 04-image-text.png 0.9531/0.5956/0.0702; 08-presentation.pptx 0.9385/0.5925/0.0702 | 0.6269 / 0.3238 |
+| 13 | 12-notes.md 1.0/0.5936/0.0738; 03-scanned-multipage.pdf 0.9839/0.5652/0.0738; 11-page.html 0.9683/0.5614/0.0738; 03-scanned-multipage.pdf 0.9531/0.5531/0.0738; 06-document.docx 0.9385/0.5425/0.0738 | 0.5936 / 0.0738 |
+
+Q1 is now PASS because the re-ingested native PDF has persisted searchable
+evidence. Q5 regressed from PASS to refusal and Q11 regressed from PARTIAL to
+refusal relative to the earlier Phase 4b/4c behavior; both have the correct
+source in the top candidates, so these are citation-selection/grounding
+regressions rather than retrieval misses. Q12 and Q13 still cite unrelated
+Markdown evidence and remain deferred to Phase 3.
 | 9 | 0.0000 | 0.1555 |
 | 10 | 0.7708 | 0.0000 |
 | 11 | 0.6297 | 0.0000 |
