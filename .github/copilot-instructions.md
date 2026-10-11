@@ -33,3 +33,4 @@ DuckDocs is a privacy-first local document Q&A app. FastAPI backend, Next.js fro
 - Run tests with: `docker compose cp backend/tests backend:/app/` then `docker compose exec -u root backend sh -c "pip install -q pytest && python -m pytest tests -q"`.
 - Never delete or overwrite `data/`. For a clean run, move state to a new `data_backup_<n>` folder and tell me.
 - Commit to the current feature branch only. Never push, merge, force-push or rebase unless I ask.
+- Never finish a phase with any scorecard question worse than in the last verified baseline. If a change regresses a question, stop and report it before continuing.
