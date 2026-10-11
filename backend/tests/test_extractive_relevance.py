@@ -107,7 +107,7 @@ def test_entity_heading_is_kept_with_adjacent_value_line() -> None:
 def test_page_hint_does_not_select_a_different_page_marker() -> None:
     evidence_id, sentence = _most_relevant_sentence(
         "What is the marker on page 2 of the scanned document?",
-        [("ev_pages", "Page 3 marker: PAGE-3. Page 2 marker: PAGE-2.")],
+        [("ev_pages", "Page 3 marker: PAGE-3. Page 2 marker: PAGE-2. SCAN-PAGE-3.")],
     )
 
     assert evidence_id == "ev_pages"

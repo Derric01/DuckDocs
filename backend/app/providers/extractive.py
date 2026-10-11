@@ -132,6 +132,12 @@ def _most_relevant_sentence(
             sentence_terms = _content_terms(sentence, stop_words)
             if page_match and re.search(rf"\bpage\s+(?!{page_match.group(1)}\b)\d+\b", sentence, flags=re.I):
                 continue
+            if page_match and re.search(
+                rf"\bpage[-_](?!{page_match.group(1)}\b)\d+\b",
+                sentence,
+                flags=re.I,
+            ):
+                continue
             if slide_number and re.search(rf"\b(?:slide|page)\s+(?!{slide_number}\b)\d+\b", sentence, flags=re.I):
                 continue
             score = sum(
