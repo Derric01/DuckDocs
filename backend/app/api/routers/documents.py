@@ -54,6 +54,14 @@ async def list_documents(
     return PaginatedDocuments(items=documents[:limit], has_more=len(documents) > limit)
 
 
+@router.get("/documents/evidence-counts")
+async def document_evidence_counts(repo: RepositoryDep) -> dict[str, int]:
+    counts: dict[str, int] = {document.id: 0 for document in repo.list_documents()}
+    for evidence in repo.evidence.values():
+        counts[evidence.document_id] = counts.get(evidence.document_id, 0) + 1
+    return counts
+
+
 @router.get("/documents/{document_id}", response_model=Document)
 async def get_document(document_id: str, repo: RepositoryDep) -> Document:
     document = repo.get_document(document_id)

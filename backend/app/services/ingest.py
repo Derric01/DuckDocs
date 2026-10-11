@@ -239,6 +239,30 @@ async def _run_pipeline(
 
     repo.update_job(job_id, status="processing", stage="embedding", progress_pct=82)
     indexed_count = repo.index_document_chunks(document_id, chunks, parsed.ocr_engine)
+    persisted_count = sum(1 for evidence in repo.evidence.values() if evidence.document_id == document_id)
+    if indexed_count != persisted_count:
+        logger.error(
+            "Evidence index count mismatch (document=%s reported=%d persisted=%d)",
+            document_id,
+            indexed_count,
+            persisted_count,
+        )
+        repo.update_job(
+            job_id,
+            status="failed",
+            stage="failed",
+            progress_pct=100,
+            error={
+                "stage": "indexing",
+                "reason_code": "evidence_index_incomplete",
+                "human_message": (
+                    "DuckDocs could not verify searchable passages for this file. "
+                    "The document needs review before it can be used."
+                ),
+            },
+        )
+        repo.update_document(document_id, status="review")
+        return
 
     if indexed_count:
         repo.update_job(job_id, status="processing", stage="indexing", progress_pct=92)

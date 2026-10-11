@@ -103,6 +103,18 @@ def preflight(base, timeout):
     duplicates = sorted({name for name in names if names.count(name) > 1})
     if duplicates:
         raise RuntimeError(f"Scorecard aborted: duplicate Library filename(s): {', '.join(duplicates)}.")
+    evidence_counts = get_json(base, "/api/v1/documents/evidence-counts", timeout)
+    missing_evidence = [
+        str(document.get("name", document.get("id", "unknown")))
+        for document in documents
+        if int(evidence_counts.get(document.get("id"), 0)) < 1
+    ]
+    if missing_evidence:
+        raise RuntimeError(
+            "Scorecard aborted: document(s) have no searchable evidence units: "
+            + ", ".join(missing_evidence)
+            + "."
+        )
     jobs = get_json(base, "/api/v1/ingest-jobs", timeout)
     active = [job.get("id", "unknown") for job in jobs if job.get("status") in {"queued", "processing"}]
     if active:

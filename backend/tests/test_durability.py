@@ -93,6 +93,19 @@ def test_finished_jobs_are_left_alone(tmp_path: Path) -> None:
     assert repo.get_document("doc_c").status == "ready"  # type: ignore[union-attr]
 
 
+def test_evidence_count_endpoint_exposes_index_consistency(tmp_path: Path) -> None:
+    with client_with_data_root(tmp_path) as client:
+        upload = client.post(
+            "/api/v1/documents",
+            files={"files": ("policy.pdf", _native_pdf_bytes("Searchable marker"), "application/pdf")},
+        )
+        document_id = upload.json()["items"][0]["document"]["id"]
+        counts = client.get("/api/v1/documents/evidence-counts")
+        assert counts.status_code == 200
+        assert counts.json()[document_id] >= 1
+    app.dependency_overrides.clear()
+
+
 def test_reconciliation_is_idempotent(tmp_path: Path) -> None:
     repo = DocumentRepository(tmp_path)
     repo.add_document(_document("doc_e"), _job("job_e", "doc_e", "processing", "parsing"))
