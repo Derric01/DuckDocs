@@ -93,6 +93,17 @@ def test_citation_scoring_ignores_format_and_page_descriptors() -> None:
     assert selected == "XML-MARKER-4a7c is the value"
 
 
+def test_entity_heading_is_kept_with_adjacent_value_line() -> None:
+    selected = select_evidence_passage(
+        "What is the location of Kyoto Tower?",
+        "Kyoto Tower is located in Kyoto.",
+        "Kyoto Tower\nlocated in Kyoto.",
+    )
+
+    assert "Kyoto Tower" in selected
+    assert "located in Kyoto" in selected
+
+
 def test_grounding_gate_checks_six_word_factual_claims() -> None:
     result = GroundingGate().validate(
         "The record identifies the Engineering department. [chunk:ev_climate]",

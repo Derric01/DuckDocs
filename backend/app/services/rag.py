@@ -509,7 +509,18 @@ def select_evidence_passage(query: str, answer: str, snippet: str) -> str:
             for (text, _), overlap in zip(candidates, query_overlap, strict=True)
             if overlap == best_query_overlap
         ]
-        return " ".join(dict.fromkeys(selected))
+        result = " ".join(dict.fromkeys(selected))
+        if "\n" in snippet and result:
+            lines = [line.strip() for line in snippet.splitlines() if line.strip()]
+            for index, line in enumerate(lines):
+                if result in line and index > 0:
+                    heading = lines[index - 1]
+                    if len(heading.split()) <= 8 and not re.search(r"[.!?]$", heading):
+                        heading_terms = tokenize(heading)
+                        if heading_terms & answer_terms:
+                            result = f"{heading} {result}"
+                    break
+        return result
     answer_overlap_required = max(1, min(2, best_answer_overlap - 1))
     selected = [
         text.rstrip(".!? ") for (text, terms), overlap in zip(candidates, answer_overlap, strict=True)

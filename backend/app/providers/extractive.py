@@ -110,6 +110,7 @@ def _most_relevant_sentence(
     }
     candidates: list[tuple[int, int, str, str]] = []
     for chunk_index, (chunk_id, snippet) in enumerate(pairs):
+        source_lines = [line.strip() for line in snippet.splitlines() if line.strip()]
         sentences = [
             part.strip()
             for part in re.split(
@@ -142,7 +143,19 @@ def _most_relevant_sentence(
                     score += 1
                 if sentence_terms & causal_cues:
                     score += 3
-            candidates.append((score, -chunk_index * 1000 - sentence_index, chunk_id, sentence))
+            display = sentence
+            if "\n" in snippet:
+                for line_index, line in enumerate(source_lines):
+                    if sentence in line and line_index > 0:
+                        heading = source_lines[line_index - 1]
+                        if (
+                            len(heading.split()) <= 8
+                            and not re.search(r"[.!?]$", heading)
+                            and _content_terms(heading, stop_words) & sentence_terms
+                        ):
+                            display = f"{heading} {sentence}"
+                        break
+            candidates.append((score, -chunk_index * 1000 - sentence_index, chunk_id, display))
     if candidates:
         _, _, chunk_id, sentence = max(candidates)
         return chunk_id, sentence
