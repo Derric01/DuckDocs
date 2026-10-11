@@ -6,6 +6,7 @@ import logging
 import json
 import os
 import re
+from math import log
 from time import perf_counter
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -41,6 +42,13 @@ def _log_stage(stage: str, started: float, **fields: object) -> None:
     logger.debug("ask_stage=%s duration_ms=%.1f %s", stage, (perf_counter() - started) * 1000, " ".join(
         f"{key}={value}" for key, value in fields.items()
     ))
+
+
+def _split_terms(value: str) -> set[str]:
+    terms: set[str] = set()
+    for token in re.findall(r"[a-z0-9][a-z0-9_.-]*", value.lower()):
+        terms.update(part for part in re.findall(r"[a-z0-9]+", token) if len(part) > 2)
+    return terms
 
 
 @dataclass(slots=True)
@@ -583,6 +591,12 @@ class RagService:
         elif scope and scope.type == "selection" and scope.document_ids:
             document_ids = list(scope.document_ids)
 
+        candidate_ids = self._hint_candidate_ids(query, document_ids)
+        candidate_document_ids = (
+            sorted({self.repository.evidence[evidence_id].document_id for evidence_id in candidate_ids})
+            if candidate_ids is not None
+            else document_ids
+        )
         embedder = self.registry.get_embedding_provider()
         vector_hits = self.vector_store.query(
             query,
@@ -590,13 +604,16 @@ class RagService:
             self.repository.evidence,
             top_k=self.settings.top_k,
             min_similarity=self.settings.min_similarity,
-            document_ids=document_ids,
+            document_ids=candidate_document_ids,
         )
-        keyword_hits = self.repository.search_evidence(query, self.settings.top_k)
-        if document_ids:
+        keyword_hits = self.repository.search_evidence(query, max(self.settings.top_k, len(self.repository.evidence)))
+        if candidate_ids is not None:
+            keyword_hits = [item for item in keyword_hits if item.id in candidate_ids]
+        elif document_ids:
             keyword_hits = [item for item in keyword_hits if item.document_id in document_ids]
+        term_document_frequency, document_count = self._idf_stats()
         keyword_chunks = [
-            self._keyword_chunk(query, item)
+            self._keyword_chunk(query, item, term_document_frequency, document_count)
             for item in keyword_hits
             if self._has_lexical_support(query, item.snippet, item.document_name)
         ]
@@ -621,6 +638,8 @@ class RagService:
                         update={"retrieval_score": score, "relevance": relevance_bucket(score, self.settings)}
                     ),
                     score=score,
+                    raw_cosine=chunk.raw_cosine,
+                    lexical_coverage=chunk.lexical_coverage,
                 )
             )
         result = self._dedupe_chunks(sorted(ranked, key=lambda item: item.score, reverse=True)[: self.settings.top_k])
@@ -628,9 +647,77 @@ class RagService:
             result.sort(key=lambda item: (self._keyword_chunk(query, item.evidence).score, item.score), reverse=True)
         logger.debug(
             "retrieval_top5=%s",
-            [(chunk.evidence.document_name, round(chunk.score, 4)) for chunk in result[:5]],
+            [
+                (
+                    chunk.evidence.document_name,
+                    round(chunk.score, 4),
+                    round(chunk.raw_cosine, 4),
+                    round(chunk.lexical_coverage, 4),
+                )
+                for chunk in result[:5]
+            ],
         )
         return result
+
+    def _idf_stats(self) -> tuple[dict[str, int], int]:
+        document_terms: dict[str, set[str]] = {}
+        for evidence in self.repository.evidence.values():
+            document_terms.setdefault(evidence.document_id, set()).update(
+                _split_terms(f"{evidence.document_name} {evidence.snippet}")
+            )
+        frequencies: dict[str, int] = {}
+        for terms in document_terms.values():
+            for term in terms:
+                frequencies[term] = frequencies.get(term, 0) + 1
+        return frequencies, len(document_terms)
+
+    @staticmethod
+    def _retrieval_signals(chunks: list[RetrievedChunk]) -> dict[str, float]:
+        if not chunks:
+            return {"top_raw_cosine": 0.0, "top_lexical_coverage": 0.0}
+        return {
+            "top_raw_cosine": round(chunks[0].raw_cosine, 4),
+            "top_lexical_coverage": round(chunks[0].lexical_coverage, 4),
+        }
+
+    def _hint_candidate_ids(
+        self, query: str, document_ids: list[str] | None
+    ) -> set[str] | None:
+        candidates = {
+            evidence.id
+            for evidence in self.repository.evidence.values()
+            if document_ids is None or evidence.document_id in document_ids
+        }
+        hinted = {
+            evidence.id
+            for evidence in self.repository.evidence.values()
+            if evidence.id in candidates and self._matches_candidate_hints(query, evidence)
+        }
+        return hinted or None
+
+    @staticmethod
+    def _matches_candidate_hints(query: str, evidence: Evidence) -> bool:
+        lowered = query.lower()
+        extension = evidence.document_name.lower().rsplit(".", 1)[-1]
+        if "native text pdf" in lowered and (extension != "pdf" or evidence.fidelity_tier == "ocr_dependent"):
+            return False
+        if "scanned" in lowered and evidence.fidelity_tier != "ocr_dependent":
+            return False
+        format_extensions = {
+            "yaml": {"yaml", "yml"}, "xml": {"xml"},
+            "spreadsheet": {"xlsx", "xls", "csv"}, "presentation": {"pptx", "ppt"},
+            "word document": {"docx", "doc"},
+        }
+        for phrase, extensions in format_extensions.items():
+            if phrase in lowered and extension not in extensions:
+                return False
+        page_match = re.search(r"\bpage\s+(\d+)\b", lowered)
+        if page_match and evidence.page != int(page_match.group(1)):
+            return False
+        slide_match = re.search(r"\bslide\s+(\d+)\b", lowered)
+        if slide_match and (extension not in {"pptx", "ppt"} or evidence.page != int(slide_match.group(1))):
+            return False
+        return True
 
     @staticmethod
     def _query_hint_boost(query: str, evidence: Evidence) -> float:
@@ -688,11 +775,25 @@ class RagService:
             return True
         return matches >= (1 if len(query_terms) == 1 else 2)
 
-    def _keyword_chunk(self, query: str, evidence: Evidence) -> RetrievedChunk:
-        terms = {term for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", query.lower()) if len(term) > 2}
+    def _keyword_chunk(
+        self,
+        query: str,
+        evidence: Evidence,
+        term_document_frequency: dict[str, int] | None = None,
+        document_count: int = 0,
+    ) -> RetrievedChunk:
+        terms = _split_terms(query)
         haystack = f"{evidence.document_name} {evidence.section} {evidence.snippet}".lower()
-        matched = sum(term in haystack for term in terms)
-        score = matched / max(1, len(terms))
+        matched = _split_terms(haystack)
+        if term_document_frequency and document_count:
+            weights = {
+                term: max(0.0, log((document_count + 1) / (term_document_frequency.get(term, 0) + 1)))
+                for term in terms
+            }
+            total_weight = sum(weights.values())
+            score = sum(weights[term] for term in terms if term in matched) / max(total_weight, 1e-9)
+        else:
+            score = len(terms & matched) / max(1, len(terms))
         return RetrievedChunk(
             evidence=evidence.model_copy(
                 update={
@@ -701,6 +802,7 @@ class RagService:
                 }
             ),
             score=score,
+            lexical_coverage=score,
         )
 
     @staticmethod
@@ -897,6 +999,7 @@ class RagService:
                 diagnostic={
                     "top_score": max(chunk.score for chunk in chunks),
                     "threshold": self.settings.min_similarity,
+                    **self._retrieval_signals(chunks),
                 },
             )
 
@@ -925,6 +1028,7 @@ class RagService:
                 diagnostic={
                     "top_score": max(chunk.score for chunk in chunks),
                     "threshold": self.settings.min_similarity,
+                    **self._retrieval_signals(chunks),
                 },
             )
         confidence = score_confidence(chunks, citation_ids)
@@ -948,6 +1052,7 @@ class RagService:
             diagnostic={
                 "top_score": max(chunk.score for chunk in chunks),
                 "threshold": self.settings.min_similarity,
+                **self._retrieval_signals(chunks),
                 "confidence": confidence.overall,
                 "retrieval": confidence.retrieval,
                 "coverage": confidence.coverage,
@@ -1000,6 +1105,8 @@ class RagService:
                 # unverified empty citation.
                 snippet = select_evidence_passage(query, query, evidence.snippet)
             if snippet and not _answer_value_is_cited(answer, snippet):
+                snippet = _select_answer_value_passage(answer, evidence.snippet)
+            if snippet and not _answer_value_is_cited(answer, snippet):
                 logger.warning("Citation %s does not contain a specific answer value; dropping citation", evidence.id)
                 snippet = ""
             if not snippet:
@@ -1035,3 +1142,21 @@ def _answer_value_is_cited(answer: str, snippet: str) -> bool:
         for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", snippet)
     }
     return answer_terms <= snippet_terms
+
+
+def _select_answer_value_passage(answer: str, source: str) -> str:
+    value_terms = {
+        term.lower().rstrip(".,;:!?")
+        for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", CITATION_RE.sub("", answer))
+        if len(term) >= 6 and any(char.isdigit() for char in term)
+    }
+    if not value_terms:
+        return ""
+    for passage in re.split(r"(?<=[.!?])\s+|\n+", source):
+        passage_terms = {
+            term.lower().rstrip(".,;:!?")
+            for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", passage)
+        }
+        if value_terms <= passage_terms:
+            return passage.strip()
+    return ""

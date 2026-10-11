@@ -155,6 +155,21 @@ def test_scanned_filename_query_retrieves_sparse_ocr_document() -> None:
     assert chunks[0].evidence.document_name == "02-scanned-ocr.pdf"
 
 
+def test_native_text_hint_filters_candidates_before_top_k() -> None:
+    service = _service(
+        [
+            _evidence("ev_native", "01-native-text.pdf", "Native text marker NATIVE-PDF-7f3a2b"),
+            _evidence("ev_scan", "02-scanned-ocr.pdf", "OCR marker SCAN-PDF-9d1c4e"),
+        ]
+    )
+    service.vector_store.query = lambda *args, **kwargs: []  # type: ignore[method-assign]
+
+    chunks = service.retrieve("What is the test marker in the native text PDF?")
+
+    assert chunks
+    assert {chunk.evidence.document_name for chunk in chunks} == {"01-native-text.pdf"}
+
+
 def test_reciprocal_rank_fusion_keeps_keyword_only_hit() -> None:
     vector_evidence = _evidence("ev_vector", "notes.md", "A semantic reference to the requested topic.")
     keyword_evidence = _evidence("ev_keyword", "13-config.yaml", "YAML config file marker: YAML-MARKER-2d9b")
@@ -203,6 +218,20 @@ def test_answer_marker_must_appear_in_selected_quote() -> None:
         snippet,
     )
     assert "SCAN-PDF-9d1c4e" in selected
+
+
+def test_answer_value_reselects_source_sentence_for_citation() -> None:
+    service = _service(
+        [_evidence("ev_marker", "02-scanned-ocr.pdf", "Heading. The test marker is SCAN-PDF-9d1c4e.")]
+    )
+    response = service._bind_citations(
+        ["ev_marker"],
+        [RetrievedChunk(service.repository.evidence["ev_marker"], 0.9)],
+        "What is the test marker in the scanned OCR PDF?",
+        "The test marker is SCAN-PDF-9d1c4e. [chunk:ev_marker].",
+    )
+    assert response
+    assert "SCAN-PDF-9d1c4e" in response[0].snippet
 
 
 def test_revenue_sum_is_grounded_as_synthesized_answer() -> None:

@@ -18,6 +18,8 @@ logger = logging.getLogger("duckdocs.vector_store")
 class RetrievedChunk:
     evidence: Evidence
     score: float
+    raw_cosine: float = 0.0
+    lexical_coverage: float = 0.0
 
 
 class VectorStore:
@@ -160,6 +162,7 @@ class VectorStore:
                             }
                         ),
                         score=score,
+                        raw_cosine=score,
                     )
                 )
             logger.debug(
