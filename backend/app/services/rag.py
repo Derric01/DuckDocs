@@ -288,15 +288,8 @@ def _evidence_matches_query_hints(
     lowered = query.lower()
     name = evidence.document_name.lower()
     extension = name.rsplit(".", 1)[-1] if "." in name else ""
-    if "yaml" in lowered and extension not in {"yaml", "yml"}:
-        return False
-    if "xml" in lowered and extension != "xml":
-        return False
-    if "spreadsheet" in lowered and extension not in {"xlsx", "xls", "csv"}:
-        return False
-    if "presentation" in lowered and extension not in {"pptx", "ppt"}:
-        return False
-    if "word document" in lowered and extension not in {"docx", "doc"}:
+    expected = _query_format_extensions(lowered, {extension})
+    if expected and extension not in expected:
         return False
     if "native text pdf" in lowered and (extension != "pdf" or evidence.fidelity_tier == "ocr_dependent"):
         return False
@@ -309,6 +302,35 @@ def _evidence_matches_query_hints(
     if slide_match and (extension not in {"pptx", "ppt"} or evidence.page != int(slide_match.group(1))):
         return False
     return True
+
+
+def _query_format_extensions(query: str, available: set[str]) -> set[str]:
+    """Resolve format words to extensions that are actually present."""
+    groups = {
+        "pdf": {"pdf"},
+        "docx": {"docx", "doc"},
+        "word": {"docx", "doc"},
+        "xlsx": {"xlsx", "xls", "csv"},
+        "excel": {"xlsx", "xls", "csv"},
+        "spreadsheet": {"xlsx", "xls", "csv"},
+        "csv": {"csv"},
+        "yaml": {"yaml", "yml"},
+        "json": {"json"},
+        "xml": {"xml"},
+        "html": {"html", "htm"},
+        "markdown": {"md", "markdown"},
+        "notes": {"md", "markdown", "txt"},
+        "web page": {"html", "htm"},
+        "config": {"yaml", "yml", "json", "xml"},
+        "presentation": {"pptx", "ppt"},
+        "slides": {"pptx", "ppt"},
+        "image": {"png", "jpg", "jpeg", "gif", "webp"},
+        "picture": {"png", "jpg", "jpeg", "gif", "webp"},
+        "photo": {"png", "jpg", "jpeg", "gif", "webp"},
+    }
+    requested = set().union(*(extensions for phrase, extensions in groups.items() if phrase in query))
+    present = requested & available
+    return present if present else requested
 
 
 def _quote_matches(quote: str, source: str) -> bool:
@@ -747,26 +769,25 @@ class RagService:
         hinted = {
             evidence.id
             for evidence in self.repository.evidence.values()
-            if evidence.id in candidates and self._matches_candidate_hints(query, evidence)
+            if evidence.id in candidates and self._matches_candidate_hints(query, evidence, candidates)
         }
         return hinted or None
 
-    @staticmethod
-    def _matches_candidate_hints(query: str, evidence: Evidence) -> bool:
+    def _matches_candidate_hints(self, query: str, evidence: Evidence, candidate_ids: set[str]) -> bool:
         lowered = query.lower()
         extension = evidence.document_name.lower().rsplit(".", 1)[-1]
         if "native text pdf" in lowered and (extension != "pdf" or evidence.fidelity_tier == "ocr_dependent"):
             return False
         if "scanned" in lowered and evidence.fidelity_tier != "ocr_dependent":
             return False
-        format_extensions = {
-            "yaml": {"yaml", "yml"}, "xml": {"xml"},
-            "spreadsheet": {"xlsx", "xls", "csv"}, "presentation": {"pptx", "ppt"},
-            "word document": {"docx", "doc"},
+        available = {
+            item.document_name.lower().rsplit(".", 1)[-1]
+            for item in self.repository.evidence.values()
+            if item.id in candidate_ids
         }
-        for phrase, extensions in format_extensions.items():
-            if phrase in lowered and extension not in extensions:
-                return False
+        expected = _query_format_extensions(lowered, available)
+        if expected and extension not in expected and not re.search(r"\b[\w-]+\.[a-z0-9]{2,5}\b", lowered):
+            return False
         page_match = re.search(r"\bpage\s+(\d+)\b", lowered)
         if page_match and evidence.page != int(page_match.group(1)):
             return False

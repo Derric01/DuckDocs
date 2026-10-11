@@ -5,7 +5,7 @@ from pathlib import Path
 from app.core.config import Settings
 from app.domain.models import Evidence
 from app.repositories.memory import DocumentRepository
-from app.services.rag import GroundingGate, RagService, select_evidence_passage
+from app.services.rag import GroundingGate, RagService, _evidence_matches_query_hints, select_evidence_passage
 from app.services.vector_store import RetrievedChunk, VectorStore
 
 
@@ -327,3 +327,13 @@ def test_cosine_signal_is_available_for_keyword_candidates() -> None:
     store = VectorStore.__new__(VectorStore)
 
     assert store.cosine_similarities("marker", [evidence], Embedder())["ev_signal"] == 0.8
+
+
+def test_format_hint_rejects_wrong_document_extension() -> None:
+    evidence = _evidence("ev_md", "notes.md", "A markdown note")
+
+    assert not _evidence_matches_query_hints(
+        "What is in the XML file?",
+        {"ev_md": evidence},
+        "ev_md",
+    )
