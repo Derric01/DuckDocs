@@ -199,7 +199,7 @@ class GroundingGate:
                     _is_structured_document(evidence_metadata.get(evidence_id))
                     for evidence_id in cited_ids
                 )
-                and _looks_like_structured_answer(stripped)
+                and (_looks_like_structured_answer(stripped) or _looks_like_key_value_answer(stripped))
             )
             if factual and len(uncited) / max(1, len(factual)) > 0.6 and not structured_context:
                 return GateResult(
@@ -382,6 +382,10 @@ def _is_structured_document(evidence: Evidence | None) -> bool:
 
 def _looks_like_structured_answer(value: str) -> bool:
     return bool(re.search(r"<[a-z][^>]*>|[a-z][\w.-]*\s*:\s*[^:\n]+|\|[^|]+\|", value, re.I))
+
+
+def _looks_like_key_value_answer(value: str) -> bool:
+    return bool(re.search(r"\b(?:is|are|equals?)\s+\S+", value, re.I))
 
 
 def _claims_match_evidence(

@@ -115,6 +115,20 @@ def test_grounding_gate_checks_short_cited_claims() -> None:
     assert result.reason == "content_not_grounded"
 
 
+def test_grounding_gate_accepts_json_key_value_answer() -> None:
+    evidence = _json_evidence = type(
+        "JsonEvidence", (), {"document_name": "config.json"}
+    )()
+    result = GroundingGate().validate(
+        "The status is active. [chunk:ev_json]",
+        {"ev_json"},
+        evidence_by_id={"ev_json": '"status": "active"'},
+        evidence_metadata={"ev_json": evidence},
+    )
+
+    assert result.outcome == "grounded"
+
+
 def test_citation_selects_only_kyoto_climate_sentences() -> None:
     query = "Why is June not recommended for visiting Kyoto according to the document?"
     snippet = (
