@@ -104,6 +104,17 @@ def test_entity_heading_is_kept_with_adjacent_value_line() -> None:
     assert "located in Kyoto" in selected
 
 
+def test_page_hint_does_not_select_a_different_page_marker() -> None:
+    evidence_id, sentence = _most_relevant_sentence(
+        "What is the marker on page 2 of the scanned document?",
+        [("ev_pages", "Page 3 marker: PAGE-3. Page 2 marker: PAGE-2.")],
+    )
+
+    assert evidence_id == "ev_pages"
+    assert "PAGE-2" in sentence
+    assert "PAGE-3" not in sentence
+
+
 def test_grounding_gate_checks_six_word_factual_claims() -> None:
     result = GroundingGate().validate(
         "The record identifies the Engineering department. [chunk:ev_climate]",

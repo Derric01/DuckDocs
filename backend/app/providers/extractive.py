@@ -104,6 +104,15 @@ def _most_relevant_sentence(
         None,
     )
     is_why_question = bool(re.search(r"\bwhy\b", question, flags=re.I))
+    page_match = re.search(r"\bpage\s+(\d+)\b", question, flags=re.I)
+    slide_number = None
+    slide_match = re.search(r"\bslide\s+(\d+)\b", question, flags=re.I)
+    if slide_match:
+        slide_number = slide_match.group(1)
+    else:
+        ordinal_slide = re.search(r"\b(first|second|third|fourth|fifth)\s+slide\b", question, flags=re.I)
+        if ordinal_slide:
+            slide_number = str({"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}[ordinal_slide.group(1).lower()])
     causal_cues = {
         "because", "since", "therefore", "caused", "cause", "reason", "result", "resulted", "led",
         "failed", "stopped", "rest", "nap", "sleep", "slept", "forgot", "ignored", "misjudged",
@@ -121,6 +130,10 @@ def _most_relevant_sentence(
         ]
         for sentence_index, sentence in enumerate(sentences):
             sentence_terms = _content_terms(sentence, stop_words)
+            if page_match and re.search(rf"\bpage\s+(?!{page_match.group(1)}\b)\d+\b", sentence, flags=re.I):
+                continue
+            if slide_number and re.search(rf"\b(?:slide|page)\s+(?!{slide_number}\b)\d+\b", sentence, flags=re.I):
+                continue
             score = sum(
                 log((document_count + 1) / (term_document_frequency.get(term, 0) + 1)) + 1
                 for term in terms & sentence_terms
