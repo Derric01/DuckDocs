@@ -724,6 +724,18 @@ class RagService:
             "top_lexical_coverage": round(chunks[0].lexical_coverage, 4),
         }
 
+    @staticmethod
+    def _retrieval_top5(chunks: list[RetrievedChunk]) -> list[dict[str, str | float]]:
+        return [
+            {
+                "document": chunk.evidence.document_name,
+                "score": round(chunk.score, 4),
+                "raw_cosine": round(chunk.raw_cosine, 4),
+                "lexical_coverage": round(chunk.lexical_coverage, 4),
+            }
+            for chunk in chunks[:5]
+        ]
+
     def _hint_candidate_ids(
         self, query: str, document_ids: list[str] | None
     ) -> set[str] | None:
@@ -1044,6 +1056,7 @@ class RagService:
                     "top_score": max(chunk.score for chunk in chunks),
                     "threshold": self.settings.min_similarity,
                     **self._retrieval_signals(chunks),
+                    "top5": self._retrieval_top5(chunks),
                 },
             )
 
@@ -1073,6 +1086,7 @@ class RagService:
                     "top_score": max(chunk.score for chunk in chunks),
                     "threshold": self.settings.min_similarity,
                     **self._retrieval_signals(chunks),
+                    "top5": self._retrieval_top5(chunks),
                 },
             )
         confidence = score_confidence(chunks, citation_ids)
@@ -1097,6 +1111,7 @@ class RagService:
                 "top_score": max(chunk.score for chunk in chunks),
                 "threshold": self.settings.min_similarity,
                 **self._retrieval_signals(chunks),
+                "top5": self._retrieval_top5(chunks),
                 "confidence": confidence.overall,
                 "retrieval": confidence.retrieval,
                 "coverage": confidence.coverage,

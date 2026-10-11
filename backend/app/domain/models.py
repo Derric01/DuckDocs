@@ -5,7 +5,7 @@ the evidence invariants in docs/03_FUNCTIONAL_REQUIREMENTS.md §7.2.
 """
 
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -142,7 +142,7 @@ class GroundedResponse(BaseModel):
     provider: dict[str, str]
     created_at: datetime
     refusal_reason: str | None = None
-    diagnostic: dict[str, float] | None = None
+    diagnostic: dict[str, Any] | None = None
 
 
 class Provider(BaseModel):
@@ -187,4 +187,3 @@ class SettingsResponse(BaseModel):
     density: Literal["dense", "comfortable"] = "dense"
     local_only: bool = True
     providers: list[Provider]
-

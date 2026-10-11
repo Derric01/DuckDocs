@@ -249,6 +249,21 @@ def main():
     print("-" * 110)
     print(f"PASS {passes}   PARTIAL {partial}   FAIL {fails}   of {len(results)}"
           f"   |   passing answers with a wrong/missing citation: {bad_cites}")
+    print("\nTop-five retrieval signals (document, fused, cosine, lexical; maxima):")
+    for case in cases:
+        diagnostic = (raw.get(case["id"]) or {}).get("diagnostic") or {}
+        top5 = diagnostic.get("top5") or []
+        if not top5:
+            print(f"Q{case['id']}: none")
+            continue
+        formatted = "; ".join(
+            f"{item.get('document', '[unknown]')} {item.get('score', '?')}/"
+            f"{item.get('raw_cosine', '?')}/{item.get('lexical_coverage', '?')}"
+            for item in top5
+        )
+        max_cos = max(float(item.get("raw_cosine", 0.0)) for item in top5)
+        max_lex = max(float(item.get("lexical_coverage", 0.0)) for item in top5)
+        print(f"Q{case['id']}: {formatted}; max={max_cos:.4f}/{max_lex:.4f}")
 
     out_file = f"scorecard_{args.label}.json"
     with open(out_file, "w", encoding="utf-8") as fh:
