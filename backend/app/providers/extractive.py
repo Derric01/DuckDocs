@@ -97,6 +97,8 @@ def _most_relevant_sentence(
         "at", "in", "of", "for", "to", "and", "it", "on",
     }
     terms = _content_terms(question, stop_words)
+    terms -= _DOCUMENT_DESCRIPTOR_TERMS
+    label_question = bool(re.search(r"\bwhat is the\b", question, flags=re.I))
     format_hint = next(
         (extension for extension in ("xml", "yaml", "json", "csv") if extension in question.lower()),
         None,
@@ -122,6 +124,8 @@ def _most_relevant_sentence(
                 log((document_count + 1) / (term_document_frequency.get(term, 0) + 1)) + 1
                 for term in terms & sentence_terms
             ) if document_count else len(terms & sentence_terms)
+            if label_question and re.search(r"(?:^|[|\n])\s*[\w.-]+\s*:\s*\S+", sentence):
+                score += 4
             if format_hint == "xml" and "<" in sentence and ">" in sentence:
                 score += 3
             elif format_hint in {"yaml", "json"} and ":" in sentence:
@@ -152,6 +156,13 @@ def _content_terms(value: str, stop_words: set[str]) -> set[str]:
         parts = re.findall(r"[a-z0-9]+", token)
         terms.update(part for part in parts if part not in stop_words and len(part) > 1)
     return terms
+
+
+_DOCUMENT_DESCRIPTOR_TERMS = {
+    "file", "document", "page", "slide", "sheet", "pdf", "text", "test",
+    "yaml", "yml", "xml", "json", "csv", "html", "markdown", "md",
+    "native", "scanned", "ocr", "spreadsheet", "presentation", "word",
+}
 
 
 def _answer_tabular_question(prompt: str, pairs: list[tuple[str, str]]) -> str | None:

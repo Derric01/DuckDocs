@@ -408,7 +408,10 @@ def select_evidence_passage(query: str, answer: str, snippet: str) -> str:
     clean_answer = CITATION_RE.sub("", answer)
 
     def tokenize(value: str) -> set[str]:
-        return set(re.findall(r"[a-z0-9]+(?:[_.-][a-z0-9]+)*", value.lower()))
+        tokens = set(re.findall(r"[a-z0-9]+(?:[_.-][a-z0-9]+)*", value.lower()))
+        for token in tuple(tokens):
+            tokens.update(part for part in re.split(r"[_.-]", token) if len(part) > 2)
+        return tokens
 
     answer_terms = {
         term for term in tokenize(clean_answer) if term not in _EVIDENCE_STOP_WORDS and len(term) > 2
@@ -416,6 +419,7 @@ def select_evidence_passage(query: str, answer: str, snippet: str) -> str:
     query_terms = {
         term for term in tokenize(query) if term not in _EVIDENCE_STOP_WORDS and len(term) > 2
     }
+    query_terms -= _DOCUMENT_DESCRIPTOR_TERMS
     if not answer_terms:
         return ""
 
@@ -459,6 +463,15 @@ def select_evidence_passage(query: str, answer: str, snippet: str) -> str:
     candidates = [(text, terms) for text, terms in candidates]
 
     answer_overlap = [len(terms & answer_terms) for _, terms in candidates]
+    label_question = bool(re.search(r"\bwhat is the\b", query, flags=re.I))
+    label_value = [
+        1 if label_question and re.search(r"[\w.-]+\s*:\s*\S+", text) else 0
+        for text, _ in candidates
+    ]
+    answer_overlap = [
+        overlap + (2 if label_value[index] else 0)
+        for index, overlap in enumerate(answer_overlap)
+    ]
     best_answer_overlap = max(answer_overlap, default=0)
     if best_answer_overlap == 0:
         query_overlap = [len(terms & query_terms) for _, terms in candidates]
@@ -496,6 +509,12 @@ _EVIDENCE_STOP_WORDS = _GROUNDING_STOP_WORDS | {
 
 _RETRIEVAL_SUPPORT_STOP_WORDS = _GROUNDING_STOP_WORDS | {
     "according", "document", "recommend", "recommended",
+}
+
+_DOCUMENT_DESCRIPTOR_TERMS = {
+    "file", "document", "page", "slide", "sheet", "pdf", "text", "test",
+    "yaml", "yml", "xml", "json", "csv", "html", "markdown", "md",
+    "native", "scanned", "ocr", "spreadsheet", "presentation", "word",
 }
 
 

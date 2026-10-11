@@ -67,6 +67,32 @@ def test_file_format_terms_are_split_and_weighted_across_library_documents() -> 
     assert "YAML-MARKER-2d9b" in sentence
 
 
+def test_label_question_prefers_key_value_over_document_title() -> None:
+    evidence_id, sentence = _most_relevant_sentence(
+        "What is the marker in the JSON file?",
+        [
+            (
+                "ev_json",
+                "DuckDocs Test File - JSON Data. This file contains structured values. "
+                "marker: JSON-MARKER-4a7c",
+            )
+        ],
+    )
+
+    assert evidence_id == "ev_json"
+    assert "JSON-MARKER-4a7c" in sentence
+
+
+def test_citation_scoring_ignores_format_and_page_descriptors() -> None:
+    selected = select_evidence_passage(
+        "What is the marker on page 2 of the scanned XML document?",
+        "The marker is XML-MARKER-4a7c.",
+        "XML document page 2. XML-MARKER-4a7c is the value.",
+    )
+
+    assert selected == "XML-MARKER-4a7c is the value"
+
+
 def test_grounding_gate_checks_six_word_factual_claims() -> None:
     result = GroundingGate().validate(
         "The record identifies the Engineering department. [chunk:ev_climate]",
