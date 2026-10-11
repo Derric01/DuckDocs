@@ -95,7 +95,7 @@ class GroundingGate:
                     outcome="insufficient_evidence",
                     text=None,
                     cited_ids=[],
-                    reason="no_verified_claims",
+                    reason="no_evidence" if not structured else "claim_not_in_evidence",
                 )
             normalized = " ".join(f"{claim.rstrip('.!?')} [chunk:{evidence_id}]." for claim, evidence_id in verified)
             return GateResult(
@@ -119,6 +119,13 @@ class GroundingGate:
                 for evidence_id in cited_ids
                 if _evidence_matches_query_hints(query, evidence_metadata, evidence_id)
             ]
+            if not cited_ids:
+                return GateResult(
+                    outcome="insufficient_evidence",
+                    text=None,
+                    cited_ids=[],
+                    reason="format_mismatch",
+                )
             if (
                 not answer
                 or not cited_ids
@@ -128,11 +135,20 @@ class GroundingGate:
                 or _looks_like_junk_output(answer, query)
                 or not _claims_match_evidence([answer], cited_ids, evidence_by_id)
             ):
+                reason = "no_evidence"
+                if not answer:
+                    reason = "empty_answer"
+                elif any(not evidence_by_id.get(cited_id, "").strip() for cited_id in cited_ids):
+                    reason = "empty_evidence"
+                elif _looks_like_junk_output(answer, query):
+                    reason = "vacuous_answer"
+                elif not _claims_match_evidence([answer], cited_ids, evidence_by_id):
+                    reason = "claim_not_in_evidence"
                 return GateResult(
                     outcome="insufficient_evidence",
                     text=None,
                     cited_ids=[],
-                    reason="no_verified_claims",
+                    reason=reason,
                 )
             normalized = f"{answer.rstrip('.!?')} [chunk:{cited_ids[0]}]."
             return GateResult(
@@ -230,7 +246,7 @@ class GroundingGate:
                 outcome="insufficient_evidence",
                 text=None,
                 cited_ids=[],
-                reason="no_verified_claims",
+                reason="no_evidence",
             )
         return GateResult(outcome="grounded", text=raw_output, cited_ids=list(dict.fromkeys(cited_ids)))
 
@@ -437,6 +453,11 @@ def select_evidence_passage(query: str, answer: str, snippet: str) -> str:
         tokens = set(re.findall(r"[a-z0-9]+(?:[_.-][a-z0-9]+)*", value.lower()))
         for token in tuple(tokens):
             tokens.update(part for part in re.split(r"[_.-]", token) if len(part) > 2)
+        ordinals = {
+            "first": "1", "second": "2", "third": "3", "fourth": "4",
+            "fifth": "5", "sixth": "6", "seventh": "7",
+        }
+        tokens.update(ordinals[token] for token in tuple(tokens) if token in ordinals)
         return tokens
 
     answer_terms = {
@@ -467,11 +488,16 @@ def select_evidence_passage(query: str, answer: str, snippet: str) -> str:
         return ""
 
     source_terms = set().union(*(terms for _, terms in candidates))
+    original_query_terms = set(query_terms)
     query_terms &= source_terms
     # Keep the citation tied to the subject asked about. If the retrieved
     # chunk does not contain any non-generic query term, it cannot support a
     # passage for this answer even if unrelated answer words happen to match.
-    if not query_terms or not (query_terms & answer_terms):
+    if query_terms and not (query_terms & answer_terms):
+        return ""
+    if not query_terms and original_query_terms and not (answer_terms & original_query_terms):
+        return ""
+    if not query_terms and not original_query_terms and not (answer_terms & source_terms):
         return ""
     # In a relevant restaurant row, "Order ..." is the recommendation verb
     # even when the generated answer names only the venue. Do not use this
@@ -491,8 +517,8 @@ def select_evidence_passage(query: str, answer: str, snippet: str) -> str:
     answer_overlap = [len(terms & answer_terms) for _, terms in candidates]
     label_question = bool(re.search(r"\bwhat is the\b", query, flags=re.I))
     label_value = [
-        1 if label_question and re.search(r"[\w.-]+\s*:\s*\S+", text) else 0
-        for text, _ in candidates
+        1 if label_question and overlap and re.search(r"[\w.-]+\s*:\s*\S+", text) else 0
+        for (text, _), overlap in zip(candidates, answer_overlap, strict=True)
     ]
     answer_overlap = [
         overlap + (2 if label_value[index] else 0)
@@ -1117,7 +1143,7 @@ class RagService:
                 retrieved_chunk_count=len(chunks),
                 provider=provider_meta,
                 created_at=now,
-                refusal_reason="no_verified_claims",
+                refusal_reason="citation_passage_missing",
                 diagnostic={
                     "top_score": max(chunk.score for chunk in chunks),
                     "threshold": self.settings.min_similarity,

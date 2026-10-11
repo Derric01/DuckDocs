@@ -140,6 +140,16 @@ def test_grounding_gate_accepts_json_key_value_answer() -> None:
     assert result.outcome == "grounded"
 
 
+def test_json_value_citation_selects_key_value_line() -> None:
+    selected = select_evidence_passage(
+        "What is the status value in the JSON document?",
+        "The status is active.",
+        '{"status": "active", "owner": "local"}',
+    )
+
+    assert "active" in selected
+
+
 def test_citation_selects_only_kyoto_climate_sentences() -> None:
     query = "Why is June not recommended for visiting Kyoto according to the document?"
     snippet = (

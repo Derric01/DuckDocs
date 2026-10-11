@@ -125,8 +125,8 @@ def _most_relevant_sentence(
                 log((document_count + 1) / (term_document_frequency.get(term, 0) + 1)) + 1
                 for term in terms & sentence_terms
             ) if document_count else len(terms & sentence_terms)
-            if label_question and re.search(r"(?:^|[|\n])\s*[\w.-]+\s*:\s*\S+", sentence):
-                score += 4
+            if label_question and re.search(r"\b[\w.-]+\s*:\s*\S+", sentence) and score:
+                score += 1
             if format_hint == "xml" and "<" in sentence and ">" in sentence:
                 score += 3
             elif format_hint in {"yaml", "json"} and ":" in sentence:

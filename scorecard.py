@@ -169,6 +169,7 @@ def main():
     parser.add_argument("--label", default="run")
     parser.add_argument("--timeout", type=int, default=90)
     parser.add_argument("--only", default="", help="comma-separated question numbers, e.g. 1,4,7")
+    parser.add_argument("--baseline", default="", help="saved scorecard JSON used for regression comparison")
     args = parser.parse_args()
 
     wanted = {int(x) for x in args.only.split(",") if x.strip()}
@@ -182,18 +183,20 @@ def main():
         return 2
 
     print(f"Scorecard '{args.label}' against {args.url}\n")
-    print(f"{'#':>2}  {'Result':<8}{'Cited':<6}{'Chunks':>6}{'Secs':>6}{'Cos':>7}{'Lex':>7}  {'Provider':<26}{'Sources':<34}Answer")
+    print(f"{'#':>2}  {'Result':<8}{'Cited':<6}{'Chunks':>6}{'Secs':>6}{'Cos':>7}{'Lex':>7}  {'Provider':<26}{'Sources':<34}{'Reason':<24}Answer")
     print("-" * 175)
     consecutive_timeouts = 0
     for case in cases:
         started = time.time()
         chunks, provider, sources = "?", "", []
         raw_cosine, lexical_coverage = "?", "?"
+        reason = ""
         abort_after_case = False
         try:
             resp = ask(args.url, case["q"], args.timeout)
             sources = citation_sources(args.url, resp, args.timeout)
             result, cited, shown = grade(case, resp, sources)
+            reason = str(resp.get("refusal_reason") or "")
             chunks = resp.get("retrieved_chunk_count", "?")
             diagnostic = resp.get("diagnostic") or {}
             raw_cosine = diagnostic.get("top_raw_cosine", "?")
@@ -237,7 +240,7 @@ def main():
         one_line = " ".join(shown.split())[:55]
         source_text = ", ".join(dict.fromkeys(sources)) if sources else "n/a"
         print(f"{case['id']:>2}  {result:<8}{cited:<6}{chunks!s:>6}{elapsed:>6.0f}{str(raw_cosine):>7}{str(lexical_coverage):>7}  "
-              f"{provider[:25]:<26}{source_text[:33]:<34}{one_line}")
+              f"{provider[:25]:<26}{source_text[:33]:<34}{reason[:23]:<24}{one_line}")
         results.append((case["id"], result, cited))
         if abort_after_case:
             break
@@ -249,6 +252,26 @@ def main():
     print("-" * 110)
     print(f"PASS {passes}   PARTIAL {partial}   FAIL {fails}   of {len(results)}"
           f"   |   passing answers with a wrong/missing citation: {bad_cites}")
+    if args.baseline:
+        with open(args.baseline, encoding="utf-8") as fh:
+            baseline = json.load(fh)
+        baseline_results = {int(row[0]): row[1] for row in baseline.get("results", [])}
+        rank = {"FAIL": 0, "PARTIAL": 1, "PASS": 2}
+        worse = [
+            (question_id, baseline_results.get(question_id, "MISSING"), result)
+            for question_id, result, _ in results
+            if rank.get(result, -1) < rank.get(baseline_results.get(question_id, "MISSING"), -1)
+        ]
+        if worse:
+            print("Regressions versus baseline:")
+            for question_id, before, after in worse:
+                print(f"Q{question_id}: {before} -> {after}")
+            return_code = 1
+        else:
+            print("No regressions versus baseline.")
+            return_code = 0
+    else:
+        return_code = 0
     print("\nTop-five retrieval signals (document, fused, cosine, lexical; maxima):")
     for case in cases:
         diagnostic = (raw.get(case["id"]) or {}).get("diagnostic") or {}
@@ -269,6 +292,7 @@ def main():
     with open(out_file, "w", encoding="utf-8") as fh:
         json.dump({"label": args.label, "results": results, "raw": raw}, fh, indent=2, ensure_ascii=False)
     print(f"Raw responses saved to {out_file}")
+    return return_code
 
 
 if __name__ == "__main__":
