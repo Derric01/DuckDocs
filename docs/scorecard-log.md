@@ -81,6 +81,50 @@ result, while retaining both measurements because the 1B model can vary.
 **Aggregate:** 2 PASS, 3 PARTIAL, 8 FAIL; 0 passing answers with a
 wrong/missing citation.
 
+## Phase 4e validation
+
+The requested container bisect was run with a rebuild and a focused scorecard
+check at each selected commit. The first reported bad commit for Q2, Q5, and
+Q11 was `dbbbf6e` (`fix: prevent ready documents without evidence`). The
+combined predicate was intentionally conservative: a commit was bad if any
+of the three expected outcomes was absent. This identifies the first shared
+regression boundary; it does not prove that the evidence-persistence change
+itself caused all three answer regressions.
+
+The final container test run after the ordinal-page and extraction-ranking
+changes was `158 passed, 7 warnings`. The rebuilt scorecard run
+(`phase4e-final2`) remained `5 PASS, 3 PARTIAL, 5 FAIL`; the baseline comparison
+reported `Q2: PASS -> FAIL`. Q1, Q5, and Q11 were not regressions relative to
+`00e4714`.
+
+| Q | Result | Cited | Source files | Provider | Chunks | Seconds | Reason | Answer start |
+|---:|---|---|---|---|---:|---:|---|---|
+| 1 | PASS | yes | 01-native-text.pdf | extractive evidence_synth | 5 | 7 |  | Test marker: NATIVE-PDF-7f3a2b. |
+| 2 | FAIL | NO | 03-scanned-multipage.pdf | extractive evidence_synth | 4 | 3 |  | Page marker:SCAN-PAGE-3-b82e |
+| 3 | PASS | yes | Kyoto_Japan_itinerary.pdf | ollama llama3.2:1b | 12 | 3 |  | The annual average high temperature... |
+| 4 | PASS | yes | 03-scanned-multipage.pdf | extractive evidence_synth | 3 | 7 |  | Page marker:SCAN-PAGE-2-b82e |
+| 5 | PASS | yes | 08-presentation.pptx | extractive evidence_synth | 3 | 2 |  | Slide 3 Slide 3: Final marker |
+| 6 | FAIL | NO | 06-document.docx | extractive evidence_synth | 2 | 2 |  | Second paragraph with a page break... |
+| 7 | PASS | yes | 07-spreadsheet.xlsx | extractive evidence_synth | 12 | 3 |  | Sheet: Inventory |
+| 8 | FAIL | yes | 07-spreadsheet.xlsx | extractive evidence_synth | 3 | 2 |  | Sheet: Sales |
+| 9 | PARTIAL | yes | 09-data.csv | extractive evidence_synth | 12 | 3 |  | id \| name \| department |
+| 10 | PARTIAL | yes | 13-config.yaml | extractive evidence_synth | 3 | 3 |  | test_file: 13-config.yaml |
+| 11 | PARTIAL | yes | 14-data.xml | extractive evidence_synth | 1 | 2 |  | XML-MARKER-6f3c |
+| 12 | FAIL | n/a | 12-notes.md | extractive evidence_synth | 12 | 3 |  | DuckDocs Test File |
+| 13 | FAIL | n/a | 12-notes.md | extractive evidence_synth | 12 | 3 |  | DuckDocs Test File |
+
+Top-5 signal maxima were: Q1 `0.7435/1.0000`, Q2 `0.8014/0.5144`,
+Q3 `0.8328/0.8530`, Q4 `0.7325/0.4375`, Q5 `0.6816/0.3258`,
+Q6 `0.6486/0.4560`, Q7 `0.6279/0.2565`, Q8 `0.8089/0.2405`,
+Q9 `0.7435/0.2036`, Q10 `0.7708/0.4208`, Q11 `0.6297/0.1358`,
+Q12 `0.6269/0.3238`, and Q13 `0.5936/0.0738` (cosine/lexical).
+
+The Q2 gate trace is: the extractive provider produced a page-3 marker from
+`03-scanned-multipage.pdf`; citation binding rejected it because the expected
+source was absent. Q5 and Q11 were accepted by the same rebuilt run. The
+ordinal-page and higher-ranked-evidence fixes are committed after this
+measurement and require another rebuild/scorecard run before acceptance.
+
 ## Phase 4 retrieval and query-hint run
 
 Phase 4 uses reciprocal rank fusion (RRF) for vector and keyword results.
