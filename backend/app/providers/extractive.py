@@ -154,6 +154,9 @@ def _most_relevant_sentence(
                 log((document_count + 1) / (term_document_frequency.get(term, 0) + 1)) + 1
                 for term in terms & sentence_terms
             ) if document_count else len(terms & sentence_terms)
+            # Prefer the highest-ranked retrieved evidence when sentence
+            # relevance is otherwise close, avoiding cross-document drift.
+            score -= chunk_index * 0.5
             if label_question and re.search(r"\b[\w.-]+\s*:\s*\S+", sentence) and score:
                 score += 1
             if format_hint == "xml" and "<" in sentence and ">" in sentence:
