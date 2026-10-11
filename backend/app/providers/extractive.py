@@ -105,6 +105,16 @@ def _most_relevant_sentence(
     )
     is_why_question = bool(re.search(r"\bwhy\b", question, flags=re.I))
     page_match = re.search(r"\bpage\s+(\d+)\b", question, flags=re.I)
+    if not page_match:
+        ordinal_page = re.search(r"\b(first|second|third|fourth|fifth)\s+page\b", question, flags=re.I)
+        if ordinal_page:
+            page_number = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}[
+                ordinal_page.group(1).lower()
+            ]
+            page_match = re.match(
+                r"page\s+(\d+)",
+                f"page {page_number}",
+            )
     slide_number = None
     slide_match = re.search(r"\bslide\s+(\d+)\b", question, flags=re.I)
     if slide_match:

@@ -115,6 +115,17 @@ def test_page_hint_does_not_select_a_different_page_marker() -> None:
     assert "PAGE-3" not in sentence
 
 
+def test_ordinal_page_hint_does_not_select_a_different_page_marker() -> None:
+    evidence_id, sentence = _most_relevant_sentence(
+        "What does the paragraph on the second page say?",
+        [("ev_pages", "Page marker: PAGE-3. Page marker: PAGE-2.")],
+    )
+
+    assert evidence_id == "ev_pages"
+    assert "PAGE-2" in sentence
+    assert "PAGE-3" not in sentence
+
+
 def test_grounding_gate_checks_six_word_factual_claims() -> None:
     result = GroundingGate().validate(
         "The record identifies the Engineering department. [chunk:ev_climate]",
