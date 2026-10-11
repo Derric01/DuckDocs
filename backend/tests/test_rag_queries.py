@@ -305,3 +305,25 @@ def test_successful_document_reindex_removes_only_stale_vectors() -> None:
 
     assert service.index_document("doc_policy.pdf") == 1
     assert store.deleted_with == {"ev_retention"}
+def test_cosine_signal_is_available_for_keyword_candidates() -> None:
+    class Embedder:
+        ref = {"provider_type": "ollama"}
+
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[1.0, 0.0] if index == 0 else [0.8, 0.6] for index, _ in enumerate(texts)]
+
+    evidence = Evidence(
+        id="ev_signal",
+        document_id="doc_signal",
+        document_name="signal.txt",
+        section="Imported content",
+        page=1,
+        line_start=1,
+        line_end=1,
+        snippet="marker value",
+        retrieval_score=0.5,
+        relevance="Medium",
+    )
+    store = VectorStore.__new__(VectorStore)
+
+    assert store.cosine_similarities("marker", [evidence], Embedder())["ev_signal"] == 0.8

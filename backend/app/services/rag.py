@@ -636,6 +636,31 @@ class RagService:
             for item in keyword_hits
             if self._has_lexical_support(query, item.snippet, item.document_name)
         ]
+        keyword_cosines = self.vector_store.cosine_similarities(
+            query,
+            [chunk.evidence for chunk in keyword_chunks],
+            embedder,
+        )
+        keyword_chunks = [
+            RetrievedChunk(
+                evidence=chunk.evidence,
+                score=chunk.score,
+                raw_cosine=keyword_cosines.get(chunk.evidence.id, 0.0),
+                lexical_coverage=chunk.lexical_coverage,
+            )
+            for chunk in keyword_chunks
+        ]
+        vector_hits = [
+            RetrievedChunk(
+                evidence=chunk.evidence,
+                score=chunk.score,
+                raw_cosine=chunk.raw_cosine,
+                lexical_coverage=self._keyword_chunk(
+                    query, chunk.evidence, term_document_frequency, document_count
+                ).lexical_coverage,
+            )
+            for chunk in vector_hits
+        ]
         vector_rank = {chunk.evidence.id: rank for rank, chunk in enumerate(vector_hits, start=1)}
         keyword_rank = {chunk.evidence.id: rank for rank, chunk in enumerate(keyword_chunks, start=1)}
         by_id = {chunk.evidence.id: chunk for chunk in vector_hits}

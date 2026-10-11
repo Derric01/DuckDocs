@@ -131,6 +131,7 @@ class VectorStore:
     ) -> list[RetrievedChunk]:
         if not self.available or embedder.ref["provider_type"] == "keyword":
             return []
+
         try:
             vectors = embedder.embed([query])
             if not vectors or not vectors[0]:
@@ -182,6 +183,35 @@ class VectorStore:
                 top_k,
             )
             return []
+
+    def cosine_similarities(
+        self,
+        query: str,
+        evidence_units: list[Evidence],
+        embedder: EmbeddingProviderAdapter,
+    ) -> dict[str, float]:
+        """Compute absolute query cosine for candidates not returned by top-k."""
+        if not evidence_units or embedder.ref["provider_type"] == "keyword":
+            return {}
+        try:
+            vectors = embedder.embed([query, *(unit.snippet for unit in evidence_units)])
+            if len(vectors) != len(evidence_units) + 1 or not vectors[0]:
+                return {}
+            query_vector = vectors[0]
+            query_norm = sum(value * value for value in query_vector) ** 0.5
+            if query_norm == 0:
+                return {}
+            similarities: dict[str, float] = {}
+            for evidence, vector in zip(evidence_units, vectors[1:], strict=True):
+                norm = sum(value * value for value in vector) ** 0.5
+                if norm == 0:
+                    continue
+                cosine = sum(left * right for left, right in zip(query_vector, vector, strict=False))
+                similarities[evidence.id] = max(0.0, min(1.0, cosine / (query_norm * norm)))
+            return similarities
+        except Exception:
+            logger.exception("Candidate cosine calculation failed for %d evidence units", len(evidence_units))
+            return {}
 
 
 def relevance_bucket(score: float, settings: Settings) -> str:
