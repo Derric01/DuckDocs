@@ -125,6 +125,63 @@ source was absent. Q5 and Q11 were accepted by the same rebuilt run. The
 ordinal-page and higher-ranked-evidence fixes are committed after this
 measurement and require another rebuild/scorecard run before acceptance.
 
+## Phase 4f validation
+
+Plain-text bisect result from the scripted rebuild-and-scorecard run:
+
+```text
+Q2 first bad commit: dbbbf6ece5294f2d3a984436648aec0dd000b0a7
+Q5 first bad commit: dbbbf6ece5294f2d3a984436648aec0dd000b0a7
+Q11 first bad commit: dbbbf6ece5294f2d3a984436648aec0dd000b0a7
+```
+
+This is the first shared bad boundary for the combined expected-outcome
+predicate, not proof that the evidence-persistence change independently caused
+each regression.
+
+The final rebuilt HEAD (`phase4f-final3`) container suite was:
+
+```text
+162 passed, 7 warnings in 32.32s
+```
+
+The final scorecard was `6 PASS, 3 PARTIAL, 4 FAIL`, with no regressions versus
+`scorecard_phase4c-reingested.json`.
+
+Q2 decision trace:
+
+```text
+Model answer produced: yes.
+Model provider: Ollama llama3.2:1b.
+Model rejection reason: empty_evidence.
+Fallback provider: extractive evidence_synth.
+Fallback source: 02-scanned-ocr.pdf.
+Fallback answer: Testmarker:SCAN-PDF-9d1c4e.
+```
+
+Before Phase 4f, Q2's fused scores tied at `1.0`, so fallback context ordering
+could select `03-scanned-multipage.pdf` despite lower absolute signals. The
+absolute tie-break now uses raw cosine plus lexical coverage and a generic
+document-name token boost. For Q2, `02-scanned-ocr.pdf` ranks ahead with
+cosine `0.8014` / lexical `0.4876`, versus
+`03-scanned-multipage.pdf` cosine `0.7429` / lexical `0.5144`.
+
+The scorecard now prints a `Model rejected` column sourced from the API
+diagnostic field. Final model-rejection reasons included Q2 `empty_evidence`,
+Q4 `no_evidence`, Q5 `content_not_informative`, and Q7 `empty_evidence`.
+
+The JSON evidence-count check was also performed against the running stack:
+
+```text
+10-data.json: 1 evidence unit
+```
+
+The current JSON scorecard question was not refused; it returned a grounded
+partial answer from `13-config.yaml`. The synthetic JSON key/value regression
+passes. A `no_evidence` response at the retrieval stage would require zero
+retrieved candidates; the JSON document itself is not empty, so its evidence
+count is not the cause.
+
 ## Phase 4 retrieval and query-hint run
 
 Phase 4 uses reciprocal rank fusion (RRF) for vector and keyword results.
