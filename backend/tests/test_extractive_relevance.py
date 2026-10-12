@@ -172,6 +172,16 @@ def test_json_value_citation_selects_key_value_line() -> None:
     assert "active" in selected
 
 
+def test_value_question_prefers_label_value_after_leading_sentences() -> None:
+    selected = select_evidence_passage(
+        "What is the value of status in the JSON document?",
+        "The status is active.",
+        "Configuration heading. First paragraph explains the file. status: active.",
+    )
+
+    assert "status: active" in selected
+
+
 def test_citation_selects_only_kyoto_climate_sentences() -> None:
     query = "Why is June not recommended for visiting Kyoto according to the document?"
     snippet = (

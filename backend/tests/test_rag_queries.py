@@ -5,7 +5,12 @@ from pathlib import Path
 from app.core.config import Settings
 from app.domain.models import Evidence
 from app.repositories.memory import DocumentRepository
-from app.services.rag import GroundingGate, RagService, _evidence_matches_query_hints, select_evidence_passage
+from app.services.rag import (
+    GroundingGate,
+    RagService,
+    _evidence_matches_query_hints,
+    select_evidence_passage,
+)
 from app.services.vector_store import RetrievedChunk, VectorStore
 
 
@@ -42,6 +47,14 @@ class _Registry:
     def get_embedding_provider(self):  # type: ignore[no-untyped-def]
         return self.embedding
 
+
+def test_document_name_tokens_break_equal_fused_retrieval_ties() -> None:
+    ocr = _evidence("ev_ocr", "02-scanned-ocr.pdf", "marker")
+    multipage = _evidence("ev_multi", "03-scanned-multipage.pdf", "marker")
+
+    assert RagService._document_name_boost("test marker in the scanned OCR PDF", ocr) > RagService._document_name_boost(
+        "test marker in the scanned OCR PDF", multipage
+    )
 
 def _evidence(evidence_id: str, document_name: str, snippet: str) -> Evidence:
     return Evidence(

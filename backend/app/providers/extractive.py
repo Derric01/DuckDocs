@@ -99,6 +99,7 @@ def _most_relevant_sentence(
     terms = _content_terms(question, stop_words)
     terms -= _DOCUMENT_DESCRIPTOR_TERMS
     label_question = bool(re.search(r"\bwhat is the\b", question, flags=re.I))
+    value_label = re.search(r"\bvalue of (?:the )?([a-z0-9_.-]+)", question, flags=re.I)
     format_hint = next(
         (extension for extension in ("xml", "yaml", "json", "csv") if extension in question.lower()),
         None,
@@ -159,6 +160,12 @@ def _most_relevant_sentence(
             score -= chunk_index * 2.0
             if label_question and re.search(r"\b[\w.-]+\s*:\s*\S+", sentence) and score:
                 score += 1
+            if value_label and re.search(
+                rf"\b{re.escape(value_label.group(1))}\s*:\s*\S+",
+                sentence,
+                flags=re.I,
+            ):
+                score += 6
             if format_hint == "xml" and "<" in sentence and ">" in sentence:
                 score += 3
             elif format_hint in {"yaml", "json"} and ":" in sentence:

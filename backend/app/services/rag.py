@@ -749,7 +749,14 @@ class RagService:
                     lexical_coverage=chunk.lexical_coverage,
                 )
             )
-        result = self._dedupe_chunks(sorted(ranked, key=lambda item: item.score, reverse=True)[: self.settings.top_k])
+        result = self._dedupe_chunks(sorted(
+            ranked,
+            key=lambda item: (
+                item.score,
+                item.raw_cosine + item.lexical_coverage + self._document_name_boost(query, item.evidence),
+            ),
+            reverse=True,
+        )[: self.settings.top_k])
         if self.settings.reranker == "lexical":
             result.sort(key=lambda item: (self._keyword_chunk(query, item.evidence).score, item.score), reverse=True)
         logger.debug(
@@ -798,6 +805,12 @@ class RagService:
             }
             for chunk in chunks[:5]
         ]
+
+    @staticmethod
+    def _document_name_boost(query: str, evidence: Evidence) -> float:
+        query_terms = _split_terms(query)
+        name_terms = _split_terms(evidence.document_name)
+        return 0.1 * len(query_terms & name_terms)
 
     def _hint_candidate_ids(
         self, query: str, document_ids: list[str] | None
@@ -1031,6 +1044,11 @@ class RagService:
             evidence_metadata=evidence_metadata,
         )
         _log_stage("verification", stage_started, outcome=gate.outcome, reason=gate.reason or "none")
+        model_rejected = (
+            gate.reason
+            if chat.ref["provider_type"] == "ollama" and gate.outcome != "grounded"
+            else None
+        )
 
         for retry in range(max(0, self.settings.ask_retries)) if chat.ref["provider_type"] == "ollama" else ():
             if gate.outcome == "grounded":
@@ -1058,6 +1076,8 @@ class RagService:
                 _log_stage("verification", stage_started, attempt=retry + 2, outcome=gate.outcome, reason=gate.reason or "none")
                 if gate.outcome == "grounded":
                     raw_text = corrected_text
+                elif chat.ref["provider_type"] == "ollama":
+                    model_rejected = gate.reason
             except Exception:
                 _log_stage("model_call", stage_started, attempt=retry + 2, provider=chat.ref["provider_type"], failed=True)
                 logger.exception("Corrective chat generation failed before grounding gate")
@@ -1119,6 +1139,7 @@ class RagService:
                     "threshold": self.settings.min_similarity,
                     **self._retrieval_signals(chunks),
                     "top5": self._retrieval_top5(chunks),
+                    "model_rejected": model_rejected,
                 },
             )
 
@@ -1149,6 +1170,7 @@ class RagService:
                     "threshold": self.settings.min_similarity,
                     **self._retrieval_signals(chunks),
                     "top5": self._retrieval_top5(chunks),
+                    "model_rejected": model_rejected,
                 },
             )
         confidence = score_confidence(chunks, citation_ids)
@@ -1178,6 +1200,7 @@ class RagService:
                 "retrieval": confidence.retrieval,
                 "coverage": confidence.coverage,
                 "ocr": confidence.ocr,
+                "model_rejected": model_rejected,
             },
         )
 

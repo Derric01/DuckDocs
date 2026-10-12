@@ -183,7 +183,7 @@ def main():
         return 2
 
     print(f"Scorecard '{args.label}' against {args.url}\n")
-    print(f"{'#':>2}  {'Result':<8}{'Cited':<6}{'Chunks':>6}{'Secs':>6}{'Cos':>7}{'Lex':>7}  {'Provider':<26}{'Sources':<34}{'Reason':<24}Answer")
+    print(f"{'#':>2}  {'Result':<8}{'Cited':<6}{'Chunks':>6}{'Secs':>6}{'Cos':>7}{'Lex':>7}  {'Provider':<26}{'Sources':<34}{'Reason':<24}{'Model rejected':<20}Answer")
     print("-" * 175)
     consecutive_timeouts = 0
     for case in cases:
@@ -191,6 +191,7 @@ def main():
         chunks, provider, sources = "?", "", []
         raw_cosine, lexical_coverage = "?", "?"
         reason = ""
+        model_rejected = ""
         abort_after_case = False
         try:
             resp = ask(args.url, case["q"], args.timeout)
@@ -201,6 +202,7 @@ def main():
             diagnostic = resp.get("diagnostic") or {}
             raw_cosine = diagnostic.get("top_raw_cosine", "?")
             lexical_coverage = diagnostic.get("top_lexical_coverage", "?")
+            model_rejected = str(diagnostic.get("model_rejected") or "")
             provider_info = resp.get("provider") or {}
             if isinstance(provider_info, dict):
                 provider = f"{provider_info.get('name', '')} {provider_info.get('model', '')}".strip()
@@ -240,7 +242,7 @@ def main():
         one_line = " ".join(shown.split())[:55]
         source_text = ", ".join(dict.fromkeys(sources)) if sources else "n/a"
         print(f"{case['id']:>2}  {result:<8}{cited:<6}{chunks!s:>6}{elapsed:>6.0f}{str(raw_cosine):>7}{str(lexical_coverage):>7}  "
-              f"{provider[:25]:<26}{source_text[:33]:<34}{reason[:23]:<24}{one_line}")
+              f"{provider[:25]:<26}{source_text[:33]:<34}{reason[:23]:<24}{model_rejected[:19]:<20}{one_line}")
         results.append((case["id"], result, cited))
         if abort_after_case:
             break
