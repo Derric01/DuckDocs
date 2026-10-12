@@ -157,7 +157,7 @@ def _most_relevant_sentence(
             ) if document_count else len(terms & sentence_terms)
             # Prefer the highest-ranked retrieved evidence when sentence
             # relevance is otherwise close, avoiding cross-document drift.
-            score -= chunk_index * 10.0
+            score -= chunk_index * (2.0 if is_why_question else 10.0)
             if label_question and re.search(r"\b[\w.-]+\s*:\s*\S+", sentence) and score:
                 score += 1
             if value_label and re.search(
