@@ -126,6 +126,19 @@ def test_ordinal_page_hint_does_not_select_a_different_page_marker() -> None:
     assert "PAGE-3" not in sentence
 
 
+def test_extraction_prefers_top_retrieved_chunk_when_scores_are_close() -> None:
+    evidence_id, sentence = _most_relevant_sentence(
+        "What is the test marker in the scanned OCR PDF?",
+        [
+            ("ocr", "The OCR PDF contains marker SCAN-PDF-9d1c4e."),
+            ("multipage", "The scanned multi-page document contains marker SCAN-PAGE-3-b82e."),
+        ],
+    )
+
+    assert evidence_id == "ocr"
+    assert "SCAN-PDF-9d1c4e" in sentence
+
+
 def test_grounding_gate_checks_six_word_factual_claims() -> None:
     result = GroundingGate().validate(
         "The record identifies the Engineering department. [chunk:ev_climate]",
