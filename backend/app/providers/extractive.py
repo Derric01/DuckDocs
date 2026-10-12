@@ -151,10 +151,15 @@ def _most_relevant_sentence(
                 continue
             if slide_number and re.search(rf"\b(?:slide|page)\s+(?!{slide_number}\b)\d+\b", sentence, flags=re.I):
                 continue
+            matched_terms = {
+                term
+                for term in terms
+                if any(term == sentence_term or (len(term) >= 4 and term in sentence_term) for sentence_term in sentence_terms)
+            }
             score = sum(
                 log((document_count + 1) / (term_document_frequency.get(term, 0) + 1)) + 1
-                for term in terms & sentence_terms
-            ) if document_count else len(terms & sentence_terms)
+                for term in matched_terms
+            ) if document_count else len(matched_terms)
             # Prefer the highest-ranked retrieved evidence when sentence
             # relevance is otherwise close, avoiding cross-document drift.
             score -= chunk_index * (2.0 if is_why_question else 10.0)

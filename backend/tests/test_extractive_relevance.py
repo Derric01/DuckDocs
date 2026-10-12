@@ -139,6 +139,15 @@ def test_extraction_prefers_top_retrieved_chunk_when_scores_are_close() -> None:
     assert "SCAN-PDF-9d1c4e" in sentence
 
 
+def test_extraction_matches_marker_inside_ocr_label() -> None:
+    _, sentence = _most_relevant_sentence(
+        "What is the test marker in the scanned OCR PDF?",
+        [("ocr", "DuckDocs Test File. Testmarker:SCAN-PDF-9d1c4e")],
+    )
+
+    assert "SCAN-PDF-9d1c4e" in sentence
+
+
 def test_grounding_gate_checks_six_word_factual_claims() -> None:
     result = GroundingGate().validate(
         "The record identifies the Engineering department. [chunk:ev_climate]",
