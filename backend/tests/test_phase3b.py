@@ -11,7 +11,7 @@ from app.domain.models import Evidence
 from app.providers.keyword import KeywordEmbeddingAdapter
 from app.providers.ollama import OllamaChatAdapter
 from app.repositories.memory import DocumentRepository
-from app.services.rag import GroundingGate, RagService, _generate_chat, _query_format_extensions
+from app.services.rag import GroundingGate, RagService, _answer_type_missing, _generate_chat, _query_format_extensions
 from app.services.vector_store import RetrievedChunk, VectorStore
 
 
@@ -188,3 +188,29 @@ def test_cited_source_json_is_validated_as_evidence_not_a_model_envelope() -> No
         evidence_metadata={"1": unit}, query="What is the beacon value in the JSON file?",
     )
     assert result.outcome == "grounded"
+
+
+@pytest.mark.parametrize("query", [
+    "In dollars, what is the admission fee according to this guide?",
+    "What does the guide say about admission, including its cost in euros?",
+    "For admission, tell me the listed price expressed in INR.",
+    "How much in pounds is admission listed as?",
+    "What do visitors pay for admission in USD?",
+    "What is the admission charge in yen?",
+])
+def test_amount_questions_check_the_selected_quote_not_unrelated_numbers(query: str) -> None:
+    source = "Admission is listed below. Revision number: 2024. The cafe serves lunch."
+    result = GroundingGate().validate(
+        '{"answer":"Admission is listed below.","evidence_ids":[1]}', {"1"},
+        evidence_by_id={"1": source}, query=query,
+    )
+    assert result.reason == "answer_type_missing"
+
+
+@pytest.mark.parametrize("source", ["Entry fee: USD42.", "Entry fee: € 42.50.", "Entry fee: 2,500 rupees."])
+def test_amount_questions_accept_numeric_currency_evidence(source: str) -> None:
+    assert not _answer_type_missing("What is the entry fee in currency?", ["1"], {"1": source}, source)
+
+
+def test_non_amount_currency_question_is_not_forced_to_have_a_number() -> None:
+    assert not _answer_type_missing("Which currency is accepted?", ["1"], {"1": "The accepted currency is euros."})

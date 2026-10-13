@@ -173,7 +173,7 @@ class GroundingGate:
                     cited_ids=[],
                     reason=reason,
                 )
-            if _answer_type_missing(query, cited_ids, evidence_by_id):
+            if _answer_type_missing(query, cited_ids, evidence_by_id, answer):
                 return GateResult(
                     outcome="insufficient_evidence",
                     text=None,
@@ -234,7 +234,7 @@ class GroundingGate:
         ]
 
         if task == "ask" and cited_ids:
-            if _answer_type_missing(query, cited_ids, evidence_by_id):
+            if _answer_type_missing(query, cited_ids, evidence_by_id, stripped):
                 return GateResult(
                     outcome="insufficient_evidence",
                     text=None,
@@ -419,24 +419,31 @@ def _answer_type_missing(
     query: str | None,
     cited_ids: list[str],
     evidence_by_id: dict[str, str] | None,
+    answer: str | None = None,
 ) -> bool:
     if not query or not evidence_by_id:
         return False
     lowered = query.lower()
     asks_numeric = bool(
-        re.search(r"\b(?:how much|how many|what price|price|cost|amount|rate|count)\b", lowered)
+        re.search(r"\b(?:how much|how many|prices?|pricing|costs?|fees?|charges?|fares?|tariffs?|amount|rate|count)\b", lowered)
     )
+    currency_word = re.search(r"\b(?:usd|eur|gbp|inr|jpy|cad|aud|dollars?|euros?|pounds?|rupees?|yen|currency)\b|[$€£₹]", lowered)
+    if currency_word and re.search(r"\b(?:pay|pays|paid|payment|payments|spend|spent|budget|expenses?|worth|priced)\b", lowered):
+        asks_numeric = True
     asks_date = bool(re.search(r"\bwhen\b", lowered))
     if not asks_numeric and not asks_date:
         return False
-    source = " ".join(evidence_by_id.get(evidence_id, "") for evidence_id in cited_ids)
+    sources = [evidence_by_id.get(evidence_id, "") for evidence_id in cited_ids]
+    if answer is not None:
+        sources = [select_evidence_passage(query, answer, source) for source in sources]
+    source = " ".join(sources)
     if asks_date and re.search(
         r"\b(?:19|20)\d{2}\b|\b\d{1,2}[/-]\d{1,2}[/-](?:\d{2}|\d{4})\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b",
         source,
         flags=re.I,
     ):
         return False
-    if asks_numeric and re.search(r"\b\d+(?:[.,]\d+)*\b|[$€£]\s?\d|\b\d+\s?%", source):
+    if asks_numeric and re.search(r"\b\d+(?:[.,]\d+)*\b|[$€£₹]\s?\d|\b\d+\s?%|\b(?:USD|EUR|GBP|INR|JPY|CAD|AUD|Rs\.?)\s*\d", source, flags=re.I):
         return False
     return True
 
@@ -1314,7 +1321,12 @@ class RagService:
         ]
         citations = self._bind_citations(citation_ids, chunks, query, gate.text or "")
         _log_stage("citation_binding", stage_started, citations=len(citations))
-        if not citations:
+        quote_type_missing = _answer_type_missing(
+            query,
+            [citation.evidence_unit_id for citation in citations],
+            {citation.evidence_unit_id: citation.snippet for citation in citations},
+        )
+        if not citations or quote_type_missing:
             _log_stage("total", total_started, outcome="insufficient_evidence", chunks=len(chunks))
             return GroundedResponse(
                 id=response_id,
@@ -1327,7 +1339,7 @@ class RagService:
                 retrieved_chunk_count=len(chunks),
                 provider=provider_meta,
                 created_at=now,
-                refusal_reason="citation_passage_missing",
+                refusal_reason="answer_type_missing" if quote_type_missing else "citation_passage_missing",
                 diagnostic={
                     "top_score": max(chunk.score for chunk in chunks),
                     "threshold": self.settings.min_similarity,
