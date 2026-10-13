@@ -34,7 +34,21 @@ if os.getenv("DUCKDOCS_LOG_LEVEL", "INFO").upper() == "DEBUG" and not logger.han
 def _generate_chat(chat: object, prompt: str) -> Iterator[str] | str:
     generate = getattr(chat, "generate")
     if getattr(chat, "ref", {}).get("provider_type") == "ollama":
-        return generate(prompt, stream=False, structured_output=True)
+        passage_numbers = [int(value) for value in re.findall(r"\[\[chunk:(\d+)\]\]", prompt)]
+        schema = {
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string"},
+                "evidence_ids": {
+                    "type": "array",
+                    "items": {"type": "integer", "enum": passage_numbers},
+                    "maxItems": len(passage_numbers),
+                },
+            },
+            "required": ["answer", "evidence_ids"],
+            "additionalProperties": False,
+        }
+        return generate(prompt, stream=False, structured_output=schema)
     return generate(prompt, stream=False)
 
 
@@ -82,6 +96,12 @@ class GroundingGate:
         if stripped == "INSUFFICIENT_EVIDENCE" or stripped.startswith("INSUFFICIENT_EVIDENCE"):
             return GateResult(outcome="insufficient_evidence", text=None, cited_ids=[], reason="model_declined")
 
+        if stripped.startswith("{"):
+            try:
+                json.loads(stripped)
+            except json.JSONDecodeError:
+                return GateResult(outcome="insufficient_evidence", text=None, cited_ids=[], reason="invalid_json")
+
         structured = _parse_structured_claims(stripped)
         if structured is not None:
             verified: list[tuple[str, str]] = []
@@ -108,6 +128,8 @@ class GroundingGate:
         simple = _parse_simple_answer(stripped)
         if simple is not None:
             answer, cited_ids = simple
+            if any(cited_id not in allowed_chunk_ids for cited_id in cited_ids):
+                return GateResult(outcome="insufficient_evidence", text=None, cited_ids=[], reason="unknown_evidence_id")
             if _answer_adds_no_information(answer, query):
                 return GateResult(
                     outcome="insufficient_evidence",
@@ -1150,7 +1172,7 @@ class RagService:
         raw_text = raw if isinstance(raw, str) else "".join(raw)
         allowed = {str(index) for index, chunk in enumerate(ask_chunks, start=1)}
         evidence_by_id = {
-            str(index): chunk.evidence.snippet
+            str(index): chunk.evidence.snippet[: self.settings.ask_chunk_max_chars]
             for index, chunk in enumerate(ask_chunks, start=1)
         }
         evidence_metadata = {
@@ -1271,9 +1293,9 @@ class RagService:
 
         stage_started = perf_counter()
         citation_ids = [
-            chunks[int(cited_id) - 1].evidence.id
+            ask_chunks[int(cited_id) - 1].evidence.id
             for cited_id in gate.cited_ids
-            if cited_id.isdigit() and 0 < int(cited_id) <= min(len(chunks), self.settings.ask_max_chunks)
+            if cited_id.isdigit() and 0 < int(cited_id) <= len(ask_chunks)
         ]
         citations = self._bind_citations(citation_ids, chunks, query, gate.text or "")
         _log_stage("citation_binding", stage_started, citations=len(citations))

@@ -40,7 +40,7 @@ class OllamaChatAdapter:
         }
 
     def generate(
-        self, prompt: str, *, stream: bool = True, structured_output: bool = False
+        self, prompt: str, *, stream: bool = True, structured_output: bool | dict[str, Any] = False
     ) -> Iterator[str] | str:
         payload = {
             "model": self.model_name,
@@ -55,7 +55,7 @@ class OllamaChatAdapter:
             "keep_alive": self.keep_alive,
         }
         if structured_output:
-            payload["format"] = "json"
+            payload["format"] = structured_output if isinstance(structured_output, dict) else "json"
         if stream:
             return self._stream(payload)
         body = self._post_json("/api/generate", payload)
