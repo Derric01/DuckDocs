@@ -17,6 +17,7 @@ class StructuredError(ValueError):
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
+        self.diagnostic: dict[str, object] = {}
 
 
 def normalized(value: str) -> str:
@@ -54,12 +55,74 @@ def mapped_columns(headers: list[str], query: str) -> tuple[int, ...]:
         if not any(mentioned(word, query) for word in words):
             continue
         candidates = {i for i, header in enumerate(headers) if any(mentioned(label, header) for label in labels)}
+        if not candidates:
+            raise StructuredError("column_unmapped", "The requested field is not represented by this table's headers.")
         explicit = candidates & exact
         candidates = explicit or candidates
         if len(candidates) > 1 and not explicit:
             raise StructuredError("ambiguous_column", "Several columns match this wording. Name the exact header.")
         selected.update(candidates)
     return tuple(sorted(selected))
+
+
+def _sheet_pattern(title: str) -> str:
+    name = re.escape(title)
+    return rf"(?:(?<!\w)[\"']?{name}[\"']?\s+(?:spreadsheet|worksheet|sheet)\b|\bsheet\s*(?::|named|called)?\s*[\"']?{name}[\"']?(?!\w))"
+
+
+def table_query(query: str, unit: Evidence) -> str:
+    query = re.sub(rf"(?<!\w){re.escape(unit.document_name)}(?!\w)", " ", query, flags=re.I)
+    title = unit.table_row.sheet_name
+    if title:
+        query = re.sub(_sheet_pattern(title), " ", query, flags=re.I)
+        query = re.sub(rf"\b(?:in|on|from)\s+(?:the\s+)?{re.escape(title)}(?!\w)", " ", query, flags=re.I)
+    return query
+
+
+def plan_diagnostic(plan: Plan, headers: list[str]) -> dict[str, object]:
+    return {"operation": plan.operation, "columns": [headers[i] for i in plan.columns],
+            "filters": [{"column": headers[f.column], "operator": f.comparator, "values": list(f.values)} for f in plan.filters]}
+
+
+def select_table(query: str, tables: dict[tuple[str, int], list[Evidence]], prefer_workbook: bool = False):
+    """Use source selectors and schema feasibility; row frequency is not authority."""
+    named_sheets = {key for key, units in tables.items() if units[0].table_row.sheet_name
+                    and re.search(_sheet_pattern(units[0].table_row.sheet_name), query, re.I)}
+    if named_sheets:
+        tables = {key: units for key, units in tables.items() if key in named_sheets}
+    elif re.search(r"\b(?:in|on|from)\s+(?:the\s+)?[\w -]+?\s+(?:worksheet|sheet)\b|\bsheet\s+(?:named|called)\s+", query, re.I):
+        raise StructuredError("sheet_unmapped", "No stored table matches the named sheet. Check its exact name.")
+    viable = {}
+    errors = []
+    traces = []
+    for key, units in tables.items():
+        effective = table_query(query, units[0])
+        trace = {"document": units[0].document_name, "sheet": units[0].table_row.sheet_name}
+        try:
+            plan = plan_question(effective, units)
+            viable[key] = (plan, effective)
+            trace.update({"status": "mapped", **plan_diagnostic(plan, units[0].table_row.headers)})
+        except StructuredError as error:
+            errors.append(error)
+            trace.update({"status": error.code})
+        traces.append(trace)
+    if not viable:
+        error = next((e for e in errors if e.code != "column_unmapped"), errors[0]) if errors else StructuredError("column_unmapped", "No table column matches this question.")
+        error.diagnostic = {"table_candidates": traces}
+        raise error
+    if prefer_workbook:
+        workbooks = {key: value for key, value in viable.items() if tables[key][0].file_type == "xlsx"}
+        viable = workbooks or viable
+    located = {key: value for key, value in viable.items() if tables[key][0].table_row.sheet_name and re.search(
+        rf"\b(?:in|on|from)\s+(?:the\s+)?{re.escape(tables[key][0].table_row.sheet_name)}(?!\w)", query, re.I)}
+    viable = located or viable
+    if len(viable) != 1:
+        error = StructuredError("ambiguous_table", "Several tables support this question. Name the file and sheet to use.")
+        error.diagnostic = {"table_candidates": traces}
+        raise error
+    key = next(iter(viable))
+    plan, effective = viable[key]
+    return key, plan, effective, traces
 
 
 @dataclass(frozen=True)

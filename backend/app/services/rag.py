@@ -1153,30 +1153,19 @@ class RagService:
                 tables.setdefault((unit.document_id, unit.page), []).append(unit.model_copy(deep=True))
         explicit = bool(re.search(r"\b(?:csv|xlsx|excel|spreadsheet|table)\b", query, re.I) or named
                         or (scope and scope.type == "document"))
-        scores = {key: sum(structured.mentioned(h, query) for h in units[0].table_row.headers)
-                       + 2 * int(structured.mentioned(units[0].table_row.sheet_name or "", query))
-                       + sum(any(structured.mentioned(c, query) for c in e.table_row.cells
-                                 if re.search(r"[A-Za-z]", c)) for e in units if not e.table_row.is_header)
-                  for key, units in tables.items()}
-        if not tables or (not explicit and not any(scores.values())):
+        def supported(units: list[Evidence]) -> bool:
+            try:
+                return bool(structured.mapped_columns(units[0].table_row.headers, structured.table_query(query, units[0])))
+            except structured.StructuredError as error:
+                return error.code == "ambiguous_column"
+        if not tables or (not explicit and not any(supported(units) for units in tables.values())):
             return None
         response = dict(id=f"resp_{uuid4().hex[:12]}", kind="ask", query=query,
                         created_at=utc_now(), provider={"kind": "chat", "name": "deterministic", "model": "structured_v1"})
         try:
-            if re.search(r"\b(?:spreadsheet|sheet)\b", query, re.I) and not re.search(r"\bcsv\b", query, re.I):
-                workbook_scores = {key: score for key, score in scores.items()
-                                   if tables[key][0].file_type == "xlsx" and score > 0}
-                scores = workbook_scores or scores
-            best = max(scores.values())
-            choices = [key for key, score in scores.items() if score == best]
-            if re.search(r"\b(?:spreadsheet|sheet)\b", query, re.I) and not re.search(r"\bcsv\b", query, re.I):
-                workbooks = [key for key in choices if tables[key][0].file_type == "xlsx"]
-                choices = workbooks or choices
-            if len(choices) != 1:
-                raise structured.StructuredError("ambiguous_table", "Several tables match. Name the file and sheet to use.")
-            key = choices[0]
+            prefer_workbook = bool(re.search(r"\b(?:spreadsheet|sheet)\b", query, re.I) and not re.search(r"\bcsv\b", query, re.I))
+            key, plan, effective_query, traces = structured.select_table(query, tables, prefer_workbook)
             units = tables[key]
-            plan = structured.plan_question(query, units)
             result = structured.execute(plan, units)
             fresh = [e for e in self.repository.all_evidence() if (e.document_id, e.page) == key]
             structured.verify_execution(result, fresh)
@@ -1187,11 +1176,13 @@ class RagService:
                 raise structured.StructuredError("answer_type_missing", "The selected cells do not contain the requested number, amount or date.")
             return GroundedResponse(**response, outcome="grounded", answer=answer, grounded=True,
                 citations=citations, retrieved_chunk_count=len(units),
-                diagnostic={"structured_operation": plan.operation, "selected_rows": len(result.rows), "verified": True})
+                diagnostic={"structured_operation": plan.operation, "selected_rows": len(result.rows), "verified": True,
+                            "structured_plan": structured.plan_diagnostic(plan, units[0].table_row.headers),
+                            "table_candidates": traces})
         except structured.StructuredError as exc:
             return GroundedResponse(**response, outcome="insufficient_evidence", answer=None, grounded=False,
                 citations=[], retrieved_chunk_count=sum(len(t) for t in tables.values()),
-                refusal_reason=exc.code, refusal_detail=str(exc))
+                refusal_reason=exc.code, refusal_detail=str(exc), diagnostic=exc.diagnostic or None)
 
     def _ask_keys(self, query: str, scope: SearchScope | None) -> GroundedResponse | None:
         eligible, named = self._structured_candidates(query, scope)
