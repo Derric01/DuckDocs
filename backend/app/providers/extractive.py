@@ -8,6 +8,7 @@ import re
 from math import log
 
 from app.providers.base import HealthStatus, ProviderRef
+from app.services.page_queries import parse_page_reference
 
 
 class ExtractiveChatAdapter:
@@ -122,25 +123,9 @@ def _most_relevant_sentence(
         None,
     )
     is_why_question = bool(re.search(r"\bwhy\b", question, flags=re.I))
-    page_match = re.search(r"\bpage\s+(\d+)\b", question, flags=re.I)
-    if not page_match:
-        ordinal_page = re.search(r"\b(first|second|third|fourth|fifth)\s+page\b", question, flags=re.I)
-        if ordinal_page:
-            page_number = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}[
-                ordinal_page.group(1).lower()
-            ]
-            page_match = re.match(
-                r"page\s+(\d+)",
-                f"page {page_number}",
-            )
-    slide_number = None
-    slide_match = re.search(r"\bslide\s+(\d+)\b", question, flags=re.I)
-    if slide_match:
-        slide_number = slide_match.group(1)
-    else:
-        ordinal_slide = re.search(r"\b(first|second|third|fourth|fifth)\s+slide\b", question, flags=re.I)
-        if ordinal_slide:
-            slide_number = str({"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}[ordinal_slide.group(1).lower()])
+    page_reference = parse_page_reference(question)
+    page_number = page_reference.number if page_reference and not page_reference.slide else None
+    slide_number = page_reference.number if page_reference and page_reference.slide else None
     causal_cues = {
         "because", "since", "therefore", "caused", "cause", "reason", "result", "resulted", "led",
         "failed", "stopped", "rest", "nap", "sleep", "slept", "forgot", "ignored", "misjudged",
@@ -167,10 +152,10 @@ def _most_relevant_sentence(
             sentences = label_passages
         for sentence_index, sentence in enumerate(sentences):
             sentence_terms = _content_terms(sentence, stop_words)
-            if page_match and re.search(rf"\bpage\s+(?!{page_match.group(1)}\b)\d+\b", sentence, flags=re.I):
+            if page_number and re.search(rf"\bpage\s+(?!{page_number}\b)\d+\b", sentence, flags=re.I):
                 continue
-            if page_match and re.search(
-                rf"\bpage[-_](?!{page_match.group(1)}\b)\d+\b",
+            if page_number and re.search(
+                rf"\bpage[-_](?!{page_number}\b)\d+\b",
                 sentence,
                 flags=re.I,
             ):

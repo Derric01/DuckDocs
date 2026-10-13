@@ -22,6 +22,7 @@ from app.providers.registry import ProviderRegistry
 from app.repositories import AnyRepository
 from app.services.vector_store import RetrievedChunk, VectorStore, relevance_bucket
 from app.services import structured
+from app.services.page_queries import parse_page_reference
 
 CITATION_RE = re.compile(r"\[chunk:([^\]]+)\]")
 logger = logging.getLogger("duckdocs.rag")
@@ -93,6 +94,7 @@ class GroundingGate:
         query: str | None = None,
         evidence_metadata: dict[str, Evidence] | None = None,
         term_document_frequency: dict[str, int] | None = None,
+        document_pages: dict[str, int] | None = None,
     ) -> GateResult:
         stripped = raw_output.strip()
         if stripped == "INSUFFICIENT_EVIDENCE" or stripped.startswith("INSUFFICIENT_EVIDENCE"):
@@ -111,7 +113,7 @@ class GroundingGate:
                 if evidence_id not in allowed_chunk_ids or not evidence_by_id:
                     continue
                 source = evidence_by_id.get(evidence_id, "")
-                if _evidence_matches_query_hints(query, evidence_metadata, evidence_id) and _quote_matches(quote, source):
+                if _evidence_matches_query_hints(query, evidence_metadata, evidence_id, document_pages) and _quote_matches(quote, source):
                     verified.append((claim, evidence_id))
             if not verified:
                 return GateResult(
@@ -142,7 +144,7 @@ class GroundingGate:
             cited_ids = [
                 evidence_id
                 for evidence_id in cited_ids
-                if _evidence_matches_query_hints(query, evidence_metadata, evidence_id)
+                if _evidence_matches_query_hints(query, evidence_metadata, evidence_id, document_pages)
             ]
             if not cited_ids:
                 return GateResult(
@@ -232,7 +234,7 @@ class GroundingGate:
         cited_ids = [
             evidence_id
             for evidence_id in cited_ids
-            if _evidence_matches_query_hints(query, evidence_metadata, evidence_id)
+            if _evidence_matches_query_hints(query, evidence_metadata, evidence_id, document_pages)
         ]
 
         if task == "ask" and cited_ids:
@@ -350,6 +352,7 @@ def _evidence_matches_query_hints(
     query: str | None,
     evidence_metadata: dict[str, Evidence] | None,
     evidence_id: str,
+    document_pages: dict[str, int] | None = None,
 ) -> bool:
     if not query or not evidence_metadata:
         return True
@@ -366,11 +369,8 @@ def _evidence_matches_query_hints(
         return False
     if "scanned" in lowered and evidence.ocr_confidence is None:
         return False
-    page_match = re.search(r"\bpage\s+(\d+)\b", lowered)
-    if page_match and evidence.page != int(page_match.group(1)):
-        return False
-    slide_match = re.search(r"\bslide\s+(\d+)\b", lowered)
-    if slide_match and (extension not in {"pptx", "ppt"} or evidence.page != int(slide_match.group(1))):
+    reference = parse_page_reference(query)
+    if reference and not reference.matches(evidence.page, extension, (document_pages or {}).get(evidence.document_id)):
         return False
     return True
 
@@ -832,6 +832,8 @@ class RagService:
             else document_ids
         )
         embedder = self.registry.get_embedding_provider()
+        page_constraints = ({self.repository.evidence[key].document_id: self.repository.evidence[key].page
+                             for key in candidate_ids} if parse_page_reference(query) and candidate_ids is not None else None)
         vector_hits = self.vector_store.query(
             query,
             embedder,
@@ -839,7 +841,10 @@ class RagService:
             top_k=self.settings.top_k,
             min_similarity=self.settings.min_similarity,
             document_ids=candidate_document_ids,
+            page_constraints=page_constraints,
         )
+        if page_constraints is not None and candidate_ids is not None:
+            vector_hits = [chunk for chunk in vector_hits if chunk.evidence.id in candidate_ids]
         keyword_hits = self.repository.search_evidence(query, max(self.settings.top_k, len(self.repository.evidence)))
         if candidate_ids is not None:
             keyword_hits = [item for item in keyword_hits if item.id in candidate_ids]
@@ -979,16 +984,26 @@ class RagService:
             for evidence in self.repository.evidence.values()
             if (document_ids is None or evidence.document_id in document_ids) and self._structured_source_ready(evidence)
         }
+        if parse_page_reference(query):
+            named = {e.document_id for e in self.repository.evidence.values() if e.id in candidates and re.search(
+                rf"(?<!\w){re.escape(e.document_name)}(?!\w)", query, re.I)}
+            if named:
+                candidates = {key for key in candidates if self.repository.evidence[key].document_id in named}
+        totals = self._document_pages()
         hinted = {
             evidence.id
             for evidence in self.repository.evidence.values()
-            if evidence.id in candidates and self._matches_candidate_hints(query, evidence, candidates)
+            if evidence.id in candidates and self._matches_candidate_hints(query, evidence, candidates, totals)
         }
         return hinted
 
-    def _matches_candidate_hints(self, query: str, evidence: Evidence, candidate_ids: set[str]) -> bool:
+    def _matches_candidate_hints(self, query: str, evidence: Evidence, candidate_ids: set[str],
+                                 document_pages: dict[str, int] | None = None) -> bool:
         lowered = query.lower()
         extension = evidence.file_type or evidence.document_name.lower().rsplit(".", 1)[-1]
+        reference = parse_page_reference(query)
+        if reference and not reference.matches(evidence.page, extension, (document_pages if document_pages is not None else self._document_pages()).get(evidence.document_id)):
+            return False
         if ((re.search(r"\b(?:excel|xlsx)\b", lowered) and extension != "xlsx")
             or (re.search(r"\bcsv\b", lowered) and not re.search(r"[\w-]+\.csv\b", lowered) and extension != "csv")):
             return False
@@ -1007,13 +1022,14 @@ class RagService:
         explicit_excel = re.search(r"\b(?:excel|xlsx)\b", lowered)
         if expected and extension not in expected and (explicit_excel or not re.search(r"\b[\w-]+\.[a-z0-9]{2,5}\b", lowered)):
             return False
-        page_match = re.search(r"\bpage\s+(\d+)\b", lowered)
-        if page_match and evidence.page != int(page_match.group(1)):
-            return False
-        slide_match = re.search(r"\bslide\s+(\d+)\b", lowered)
-        if slide_match and (extension not in {"pptx", "ppt"} or evidence.page != int(slide_match.group(1))):
-            return False
         return True
+
+    def _document_pages(self) -> dict[str, int]:
+        totals = {doc.id: doc.pages for doc in self.repository.documents.values()}
+        for evidence in self.repository.evidence.values():
+            if evidence.document_id not in self.repository.documents:
+                totals[evidence.document_id] = max(totals.get(evidence.document_id, 0), evidence.page)
+        return totals
 
     @staticmethod
     def _query_hint_boost(query: str, evidence: Evidence) -> float:
@@ -1040,17 +1056,14 @@ class RagService:
         }.items():
             if any(word in lowered for word in words) and name.endswith(f".{extension}"):
                 boost += 0.15
-        page_match = re.search(r"\bpage\s+(\d+)\b", lowered)
-        if page_match and evidence.page == int(page_match.group(1)):
-            boost += 0.25
-        slide_match = re.search(r"\bslide\s+(\d+)\b", lowered)
-        if slide_match and evidence.page == int(slide_match.group(1)) and name.rsplit(".", 1)[-1] in {"pptx", "ppt"}:
+        reference = parse_page_reference(query)
+        if reference and reference.matches(evidence.page, evidence.file_type or name.rsplit(".", 1)[-1]):
             boost += 0.25
         return boost
 
-    @classmethod
-    def _prioritize_hint_chunks(cls, query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
-        hinted = [chunk for chunk in chunks if _evidence_matches_query_hints(query, {chunk.evidence.id: chunk.evidence}, chunk.evidence.id)]
+    def _prioritize_hint_chunks(self, query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+        totals = self._document_pages()
+        hinted = [chunk for chunk in chunks if _evidence_matches_query_hints(query, {chunk.evidence.id: chunk.evidence}, chunk.evidence.id, totals)]
         if not hinted or len(hinted) == len(chunks):
             return chunks
         hinted_ids = {chunk.evidence.id for chunk in hinted}
@@ -1099,11 +1112,12 @@ class RagService:
 
     @staticmethod
     def _dedupe_chunks(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
-        seen: set[str] = set()
+        seen: set[tuple[str, int, int | None, str]] = set()
         unique: list[RetrievedChunk] = []
         for chunk in chunks:
-            key = " ".join(chunk.evidence.snippet.lower().split())[:240]
-            if not key or key in seen:
+            text = " ".join(chunk.evidence.snippet.lower().split())[:240]
+            key = (chunk.evidence.document_id, chunk.evidence.page, chunk.evidence.paragraph_number, text)
+            if not text or key in seen:
                 continue
             seen.add(key)
             unique.append(chunk)
@@ -1143,7 +1157,8 @@ class RagService:
         if named:
             all_units = [e for e in all_units if e.document_id in named]
         ids = {e.id for e in all_units}
-        return [e for e in all_units if self._matches_candidate_hints(query, e, ids)], bool(named)
+        totals = self._document_pages()
+        return [e for e in all_units if self._matches_candidate_hints(query, e, ids, totals)], bool(named)
 
     def _ask_table(self, query: str, scope: SearchScope | None) -> GroundedResponse | None:
         eligible, named = self._structured_candidates(query, scope)
@@ -1329,6 +1344,7 @@ class RagService:
             query=query,
             evidence_metadata=evidence_metadata,
             term_document_frequency=term_document_frequency,
+            document_pages=self._document_pages(),
         )
         _log_stage("verification", stage_started, outcome=gate.outcome, reason=gate.reason or "none")
         model_rejected = (
@@ -1360,6 +1376,7 @@ class RagService:
                     query=query,
                     evidence_metadata=evidence_metadata,
                     term_document_frequency=term_document_frequency,
+                    document_pages=self._document_pages(),
                 )
                 _log_stage("verification", stage_started, attempt=retry + 2, outcome=gate.outcome, reason=gate.reason or "none")
                 if gate.outcome == "grounded":
@@ -1406,6 +1423,7 @@ class RagService:
                 query=query,
                 evidence_metadata=evidence_metadata,
                 term_document_frequency=term_document_frequency,
+                document_pages=self._document_pages(),
             )
             _log_stage("verification", stage_started, attempt="fallback", outcome=gate.outcome, reason=gate.reason or "none")
 

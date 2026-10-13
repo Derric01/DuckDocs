@@ -128,8 +128,11 @@ class VectorStore:
         top_k: int,
         min_similarity: float,
         document_ids: list[str] | None = None,
+        page_constraints: dict[str, int] | None = None,
     ) -> list[RetrievedChunk]:
         if not self.available or embedder.ref["provider_type"] == "keyword":
+            return []
+        if page_constraints == {}:
             return []
 
         try:
@@ -137,6 +140,12 @@ class VectorStore:
             if not vectors or not vectors[0]:
                 return []
             where = {"document_id": {"$in": document_ids}} if document_ids else None
+            if page_constraints:
+                clauses = [{"$and": [{"document_id": key}, {"page": value}]}
+                           for key, value in page_constraints.items() if not document_ids or key in document_ids]
+                if not clauses:
+                    return []
+                where = clauses[0] if len(clauses) == 1 else {"$or": clauses}
             assert self._collection is not None
             result = self._collection.query(
                 query_embeddings=vectors,

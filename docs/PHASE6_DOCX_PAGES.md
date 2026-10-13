@@ -28,6 +28,19 @@ and applying migrations. This replaces their derived evidence/vector records
 from the preserved original upload; do not upload duplicate library documents.
 Other formats do not require re-ingestion for this phase.
 
+One page-reference parser handles numeric/cardinal/ordinal page and slide forms,
+including compound ordinals, `last`/`final`, and `after the [ordinal] page break`.
+Unqualified `after the page break` means the page beginning at the first boundary
+(physical page 2); the third boundary begins page 4. An explicit destination page
+takes precedence. Conflicting explicit page numbers select nothing.
+
+Page selectors constrain each document before vector top-k, keyword fusion and
+deduplication, and the same parser checks citations in the grounding gate. The
+last page comes from the document's full page count, including a blank last page,
+not the last retrieved chunk. Slide selectors require PPTX; page selectors also
+work for PDF, DOCX and paginated images. Existing format and document scope rules
+still apply. Identical text on different pages retains separate provenance.
+
 The existing label-value regression now supplies all parsed DOCX paragraphs to
 retrieval. Its old assumption that the entire document occupied `chunks[0]` no
 longer represented ingestion; the expected label value and exact quote are unchanged.
