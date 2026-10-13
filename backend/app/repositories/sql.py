@@ -82,6 +82,7 @@ if _SQLALCHEMY_AVAILABLE:
         bbox: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
         file_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
         table_row: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+        key_value: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     class ProviderConfigRow(Base):
         __tablename__ = "provider_configs"
@@ -172,7 +173,7 @@ class SqlDocumentRepository:
                     page=chunk.page,
                     line_start=chunk.line_start,
                     line_end=chunk.line_end,
-                    snippet=chunk.text if chunk.table_row else chunk.text[:4000],
+                    snippet=chunk.text if (chunk.table_row or chunk.key_value) else chunk.text[:4000],
                     retrieval_score=0.74,
                     relevance="Medium",
                     anchor_quality=chunk.anchor_quality,
@@ -182,6 +183,7 @@ class SqlDocumentRepository:
                     bbox=chunk.bbox,
                     file_type=document.file_type,
                     table_row=chunk.table_row,
+                    key_value=chunk.key_value,
                 )
                 session.merge(self._from_evidence(evidence))
                 self.evidence[evidence_id] = evidence
@@ -318,6 +320,7 @@ class SqlDocumentRepository:
                 "bbox": tuple(row.bbox) if row.bbox else None,
                 "file_type": row.file_type,
                 "table_row": row.table_row,
+                "key_value": row.key_value,
             }
         )
 

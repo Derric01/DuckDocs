@@ -1122,7 +1122,7 @@ class RagService:
         self.vector_store.delete_document(document_id, keep_ids={unit.id for unit in units})
         return indexed_count
 
-    def _ask_table(self, query: str, scope: SearchScope | None) -> GroundedResponse | None:
+    def _structured_candidates(self, query: str, scope: SearchScope | None) -> tuple[list[Evidence], bool]:
         all_units = list(self.repository.all_evidence())
         if scope and scope.type == "document":
             all_units = [e for e in all_units if e.document_id == scope.document_id]
@@ -1133,7 +1133,10 @@ class RagService:
         if named:
             all_units = [e for e in all_units if e.document_id in named]
         ids = {e.id for e in all_units}
-        eligible = [e for e in all_units if self._matches_candidate_hints(query, e, ids)]
+        return [e for e in all_units if self._matches_candidate_hints(query, e, ids)], bool(named)
+
+    def _ask_table(self, query: str, scope: SearchScope | None) -> GroundedResponse | None:
+        eligible, named = self._structured_candidates(query, scope)
         tables: dict[tuple[str, int], list[Evidence]] = {}
         for unit in eligible:
             if unit.table_row:
@@ -1172,10 +1175,44 @@ class RagService:
                 citations=[], retrieved_chunk_count=sum(len(t) for t in tables.values()),
                 refusal_reason=exc.code, refusal_detail=str(exc))
 
+    def _ask_keys(self, query: str, scope: SearchScope | None) -> GroundedResponse | None:
+        eligible, named = self._structured_candidates(query, scope)
+        units = [e.model_copy(deep=True) for e in eligible if e.key_value]
+        if not units:
+            return None
+        explicit = bool(re.search(r"\b(?:json|yaml|xml|config)\b", query, re.I) or named
+                        or (scope and scope.type == "document"))
+        response = dict(id=f"resp_{uuid4().hex[:12]}", kind="ask", query=query, created_at=utc_now(),
+                        provider={"kind": "chat", "name": "deterministic", "model": "key_path_v1"})
+        try:
+            selected = structured.select_keys(query, units)
+            fresh = {e.id: e for e in self.repository.all_evidence()}
+            for old in selected:
+                current = fresh.get(old.id)
+                if current is None or current.key_value != old.key_value or current.snippet != old.key_value.quote():
+                    raise structured.StructuredError("key_evidence_mismatch", "The selected path does not match stored evidence.")
+                doc_units = [e for e in fresh.values() if e.document_id == old.document_id and e.key_value]
+                if old.key_value.unit_count and len(doc_units) != old.key_value.unit_count:
+                    raise structured.StructuredError("incomplete_keys", "The stored key paths are incomplete. Re-ingest the document.")
+            citations = [Citation(id=f"cit_{uuid4().hex[:10]}", ordinal=i, evidence_unit_id=e.id,
+                                  snippet=e.snippet, key_path=e.key_value.path) for i, e in enumerate(selected, 1)]
+            return GroundedResponse(**response, outcome="grounded", answer="\n".join(e.snippet for e in selected),
+                                    grounded=True, citations=citations, retrieved_chunk_count=len(units),
+                                    diagnostic={"structured_operation": "key_lookup", "verified": True})
+        except structured.StructuredError as exc:
+            if not explicit and exc.code == "key_unmapped":
+                return None
+            return GroundedResponse(**response, outcome="insufficient_evidence", answer=None, grounded=False,
+                                    citations=[], retrieved_chunk_count=len(units), refusal_reason=exc.code,
+                                    refusal_detail=str(exc))
+
     def ask(self, query: str, scope: SearchScope | None = None) -> GroundedResponse:
         table_answer = self._ask_table(query, scope)
         if table_answer is not None:
             return table_answer
+        key_answer = self._ask_keys(query, scope)
+        if key_answer is not None:
+            return key_answer
         total_started = perf_counter()
         stage_started = perf_counter()
         chunks = self.retrieve(query, scope)

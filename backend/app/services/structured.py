@@ -20,6 +20,7 @@ class StructuredError(ValueError):
 
 
 def normalized(value: str) -> str:
+    value = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", value)
     words = re.findall(r"[\w]+", value.casefold().replace("_", " "))
     def singular(word: str) -> str:
         if word.endswith("ies"):
@@ -309,3 +310,31 @@ def answer_execution(query: str, result: Execution, table_units: list[Evidence])
     else:
         expression = f"{result.plan.operation}({', '.join(inputs)})"
     return f"{column}: {expression} = {output}", citations
+
+
+def select_keys(query: str, units: list[Evidence]) -> list[Evidence]:
+    """Resolve keys/paths, excluding incidental attribute values and prose."""
+    terms = set(normalized(query).split()) - {
+        "what", "which", "is", "are", "the", "a", "in", "of", "file", "document", "config",
+        "json", "yaml", "xml", "value", "key", "listed", "list", "say", "does", "it", "show"}
+    scores = {}
+    for unit in units:
+        key = unit.key_value
+        if not key:
+            continue
+        key_terms = set(normalized(" ".join(key.keys)).split())
+        overlap = terms & key_terms
+        if overlap and (key.value_type != "attribute" or any(normalized(k).lstrip("@") in terms for k in key.keys[-1:])):
+            exact = int(key.path in query or mentioned(key.keys[-1] if key.keys else "", query))
+            scores[unit.id] = len(overlap) + exact
+    if not scores:
+        raise StructuredError("key_unmapped", "I cannot map the question to a stored key or element path. Name the key or path explicitly.")
+    best = max(scores.values())
+    selected = [u for u in units if scores.get(u.id) == best]
+    docs = {u.document_id for u in selected}
+    if len(docs) != 1:
+        raise StructuredError("ambiguous_key", "Several documents contain this key. Name the file and full path.")
+    collection = bool(re.search(r"\b(?:items|list|listed|values|elements)\b", query, re.I))
+    if len(selected) > 1 and not collection:
+        raise StructuredError("ambiguous_key", "Several paths contain this key. Name the full path.")
+    return selected

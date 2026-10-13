@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import re
 import zipfile
 from collections.abc import Callable
@@ -26,9 +27,10 @@ from decimal import Decimal
 from html.parser import HTMLParser
 from typing import Literal
 from xml.etree import ElementTree
+import yaml
 
 from app.core.config import Settings
-from app.domain.models import FidelityTier, TableRow
+from app.domain.models import FidelityTier, TableRow, KeyValue
 from app.services.ocr import BoundingBox, OcrEngine, build_engine
 
 try:
@@ -82,6 +84,7 @@ class ParsedPage:
     bbox: BoundingBox | None = None
     engine: str | None = None
     table_rows: list[TableRow] = field(default_factory=list)
+    key_values: list[KeyValue] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -119,9 +122,112 @@ def parse_upload(
         return parse_csv(payload)
     if suffix in {"html", "htm"}:
         return parse_html(payload)
+    if suffix in STRUCTURED_TEXT_EXTENSIONS:
+        return parse_key_values(payload, suffix)
     if suffix in CODE_EXTENSIONS | STRUCTURED_TEXT_EXTENSIONS | PLAIN_TEXT_EXTENSIONS:
         return parse_plain_text(payload)
     return None
+
+
+class _UniqueSafeLoader(yaml.SafeLoader):
+    pass
+
+
+def _unique_mapping(loader, node, deep=False):
+    loader.flatten_mapping(node)
+    pairs = loader.construct_pairs(node, deep=deep)
+    return _unique_pairs(pairs)
+
+
+def _unique_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if not isinstance(key, (str, int, float, bool)) or key in result:
+            raise ValueError("Structured keys must be unique scalar values.")
+        result[key] = value
+    return result
+
+
+_UniqueSafeLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _unique_mapping)
+
+
+def parse_key_values(payload: bytes, suffix: str) -> ParsedDocument | None:
+    decoded = _decode(payload)
+    if decoded is None:
+        return None
+    values: list[KeyValue] = []
+    active: set[int] = set()
+    visits = 0
+
+    def add(path, keys, value, kind):
+        values.append(KeyValue(path=path, keys=keys, value=value, value_type=kind))
+
+    def check(depth):
+        nonlocal visits
+        visits += 1
+        if depth > 64 or visits > 20_000:
+            raise ValueError("Structured document exceeds safe nesting or node limits.")
+
+    def walk(value, path, keys, depth=0):
+        check(depth)
+        if isinstance(value, (dict, list)) and value:
+            if id(value) in active:
+                raise ValueError("Cyclic YAML aliases are not supported.")
+            active.add(id(value))
+            try:
+                if isinstance(value, dict):
+                    for key, child in value.items():
+                        key = str(key)
+                        component = f".{key}" if re.fullmatch(r"[A-Za-z_][\w-]*", key) else f"[{json.dumps(key, ensure_ascii=False)}]"
+                        walk(child, path + component, keys + [key], depth + 1)
+                else:
+                    for index, child in enumerate(value):
+                        walk(child, f"{path}[{index}]", keys + [str(index)], depth + 1)
+            finally:
+                active.remove(id(value))
+        else:
+            text = json.dumps(value, ensure_ascii=False, allow_nan=False, default=str)
+            add(path, keys, text, type(value).__name__)
+
+    def xml_walk(node, path, keys, depth=0):
+        check(depth)
+        for attribute, text in node.attrib.items():
+            add(f"{path}/@{attribute}", keys + [f"@{attribute}"], text, "attribute")
+        text = (node.text or "").strip()
+        if text:
+            add(path, keys, text, "text")
+        siblings = {}
+        counts = {}
+        for child in node:
+            counts[child.tag] = counts.get(child.tag, 0) + 1
+        for child in node:
+            siblings[child.tag] = siblings.get(child.tag, 0) + 1
+            name = child.tag
+            component = f"{name}[{siblings[name]}]" if counts[name] > 1 else name
+            xml_walk(child, f"{path}/{component}", keys + [name], depth + 1)
+            if (child.tail or "").strip():
+                add(f"{path}/text()[{len(values)}]", keys, child.tail.strip(), "text")
+
+    try:
+        if suffix == "json":
+            value = json.loads(decoded, object_pairs_hook=_unique_pairs,
+                               parse_constant=lambda _: (_ for _ in ()).throw(ValueError("Nonfinite JSON value")))
+            walk(value, "$", [])
+        elif suffix in {"yaml", "yml"}:
+            walk(yaml.load(decoded, Loader=_UniqueSafeLoader), "$", [])
+        else:
+            if re.search(r"<!DOCTYPE|<!ENTITY", decoded, re.I):
+                return None
+            root = ElementTree.fromstring(decoded)
+            xml_walk(root, f"/{root.tag}", [root.tag])
+    except (ValueError, TypeError, RecursionError, yaml.YAMLError, ElementTree.ParseError):
+        return None
+    if not values:
+        return None
+    for value in values:
+        value.unit_count = len(values)
+    return ParsedDocument([ParsedPage(1, "\n".join(v.quote() for v in values), "native", key_values=values)],
+                          "structural", 1)
 
 
 def probe_page_count(payload: bytes, suffix: str) -> int:

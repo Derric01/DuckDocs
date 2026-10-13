@@ -36,6 +36,18 @@ class TableRow(BaseModel):
         return f"{prefix}Row {self.row_number}: {values}"
 
 
+class KeyValue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    path: str
+    keys: list[str]
+    value: str
+    value_type: str
+    unit_count: int = Field(default=0, ge=0)
+
+    def quote(self) -> str:
+        return f"{self.path}: {self.value}"
+
+
 class Evidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -57,6 +69,7 @@ class Evidence(BaseModel):
     bbox: tuple[float, float, float, float] | None = None
     file_type: str | None = None
     table_row: TableRow | None = None
+    key_value: KeyValue | None = None
 
 
 class Document(BaseModel):
@@ -149,6 +162,7 @@ class Citation(BaseModel):
     sheet_name: str | None = None
     row_number: int | None = None
     column: str | None = None
+    key_path: str | None = None
 
 
 class GroundedResponse(BaseModel):

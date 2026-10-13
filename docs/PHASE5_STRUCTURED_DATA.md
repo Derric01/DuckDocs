@@ -28,3 +28,13 @@ requested columns (plus an identity column for "who/which" questions). The API a
 optional citation coordinates and a human-readable refusal_detail; the Ask UI
 shows that explanation. Explicit Excel requests cannot use CSV; an ambiguous table
 requires a file/sheet name rather than choosing arbitrary evidence.
+
+Migration 0005 adds nullable key_value metadata. **Retry existing JSON, YAML/YML
+and XML documents** to populate key-path evidence and replace old text vectors.
+JSON/YAML leaves use JSONPath-style paths; XML text/attributes use element paths
+with repeated-sibling indices. Every selected value is checked against the stored
+path quote. Ambiguous leaves require a full path. Collection questions select
+only the named collection's values, and unrelated XML attributes are excluded.
+Duplicate keys, unsafe YAML tags, cyclic aliases and XML entity declarations are
+rejected. PyYAML 6.0.3 is now directly pinned (it was already a small transitive
+dependency); it does not download models or make network calls.

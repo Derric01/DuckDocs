@@ -224,8 +224,16 @@ def test_all_supported_plain_and_structured_text_extensions_parse() -> None:
     from app.services.parsing import CODE_EXTENSIONS, PLAIN_TEXT_EXTENSIONS, STRUCTURED_TEXT_EXTENSIONS
 
     body = b"The coastal observatory records daily wind speed and rainfall measurements."
-    for suffix in CODE_EXTENSIONS | PLAIN_TEXT_EXTENSIONS | STRUCTURED_TEXT_EXTENSIONS:
+    for suffix in CODE_EXTENSIONS | PLAIN_TEXT_EXTENSIONS:
         parsed = parse_upload(body, suffix, SETTINGS)
+        assert parsed is not None, f"{suffix} did not parse"
+        assert "coastal observatory" in parsed.pages[0].text
+
+    # Structured formats need valid syntax, rather than prose renamed .json/.xml.
+    for suffix in STRUCTURED_TEXT_EXTENSIONS:
+        payload = (b'{"note":"' + body + b'"}' if suffix == "json" else
+                   b"<note>" + body + b"</note>" if suffix == "xml" else b"note: " + body)
+        parsed = parse_upload(payload, suffix, SETTINGS)
         assert parsed is not None, f"{suffix} did not parse"
         assert "coastal observatory" in parsed.pages[0].text
 

@@ -106,7 +106,7 @@ class DocumentRepository:
                 page=chunk.page,
                 line_start=chunk.line_start,
                 line_end=chunk.line_end,
-                snippet=chunk.text if chunk.table_row else chunk.text[:4000],
+                snippet=chunk.text if (chunk.table_row or chunk.key_value) else chunk.text[:4000],
                 retrieval_score=0.74,
                 relevance="Medium",
                 anchor_quality=chunk.anchor_quality,
@@ -116,6 +116,7 @@ class DocumentRepository:
                 bbox=chunk.bbox,
                 file_type=document.file_type,
                 table_row=chunk.table_row,
+                key_value=chunk.key_value,
             )
         self._persist()
         return len(chunks)
