@@ -170,7 +170,7 @@ function CitationCard({
                   passage.id === activeId ? 'bg-accent-muted' : 'hover:bg-muted',
                 )}
               >
-                <span className="shrink-0 font-mono text-2xs tabular-nums text-accent">p{passage.page}</span>
+                <span className="shrink-0 font-mono text-2xs tabular-nums text-accent">{passage.page > 0 ? `p${passage.page}` : 'Page unavailable'}</span>
                 <span
                   className={cn(
                     'line-clamp-2 text-xs leading-snug',
@@ -189,8 +189,8 @@ function CitationCard({
 }
 
 function pageSummary(passages: EvidenceRecord[]): string {
-  const pages = [...new Set(passages.map((passage) => passage.page))].sort((a, b) => a - b);
-  if (pages.length === 0) return '';
+  const pages = [...new Set(passages.map((passage) => passage.page).filter((page) => page > 0))].sort((a, b) => a - b);
+  if (pages.length === 0) return 'Page unavailable';
   if (pages.length === 1) return `Page ${pages[0]}`;
   if (pages.length <= 3) return `Pages ${pages.join(', ')}`;
   return `Pages ${pages[0]}–${pages[pages.length - 1]} · ${pages.length} total`;

@@ -41,6 +41,11 @@ not the last retrieved chunk. Slide selectors require PPTX; page selectors also
 work for PDF, DOCX and paginated images. Existing format and document scope rules
 still apply. Identical text on different pages retains separate provenance.
 
+Citations include an additive `page` field populated from stored evidence, never
+model text. The UI normally resolves the evidence record and displays its page;
+if that lookup fails, it preserves the citation's page. A legacy citation without
+either location displays `Page unavailable` instead of inventing page 1.
+
 The existing label-value regression now supplies all parsed DOCX paragraphs to
 retrieval. Its old assumption that the entire document occupied `chunks[0]` no
 longer represented ingestion; the expected label value and exact quote are unchanged.

@@ -79,7 +79,7 @@ interface ApiGroundedResponse {
   outcome: 'grounded' | 'insufficient_evidence';
   answer: string | null;
   grounded: boolean;
-  citations: Array<{ id: string; ordinal: number; evidence_unit_id: string; snippet: string }>;
+  citations: Array<{ id: string; ordinal: number; evidence_unit_id: string; snippet: string; page?: number | null }>;
   provider: { name: string; model: string };
   refusal_reason?: string | null;
   refusal_detail?: string | null;
@@ -286,7 +286,8 @@ async function hydrateAnswer(response: ApiGroundedResponse): Promise<GroundedAns
           id: citation.evidence_unit_id,
           documentName: 'Retrieved evidence',
           section: `Citation ${citation.ordinal}`,
-          page: 1,
+          // Zero is an unknown location in legacy responses, never page one.
+          page: citation.page ?? 0,
           lines: '1-1',
           relevance: 'Medium' as const,
           snippet: citation.snippet,

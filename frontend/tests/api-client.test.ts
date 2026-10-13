@@ -261,6 +261,21 @@ describe('askStream', () => {
     expect(at(answer.citations, 0).snippet).toBe('thirty days');
   });
 
+  it('preserves the server citation page when evidence lookup fails', async () => {
+    const response = { ...GROUNDED, citations: GROUNDED.citations.map((citation) => ({ ...citation, page: 7 })) };
+    fetchMock
+      .mockResolvedValueOnce(sseResponse([`event: done\ndata: ${JSON.stringify(response)}\n\n`]))
+      .mockResolvedValueOnce(jsonResponse({ error: { code: 'not_found', message: 'gone', retryable: false } }, 404));
+    expect(at((await duckDocsApi.askStream('q')).citations, 0).page).toBe(7);
+  });
+
+  it('marks a legacy citation location unknown when evidence lookup fails', async () => {
+    fetchMock
+      .mockResolvedValueOnce(sseResponse([`event: done\ndata: ${JSON.stringify(GROUNDED)}\n\n`]))
+      .mockResolvedValueOnce(jsonResponse({ error: { code: 'not_found', message: 'gone', retryable: false } }, 404));
+    expect(at((await duckDocsApi.askStream('q')).citations, 0).page).toBe(0);
+  });
+
   it('propagates an abort rather than silently retrying', async () => {
     const controller = new AbortController();
     controller.abort();

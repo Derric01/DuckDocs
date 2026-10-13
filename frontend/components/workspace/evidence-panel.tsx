@@ -161,7 +161,7 @@ function EvidenceText({
       </div>
 
       <div className="flex flex-wrap gap-1.5">
-        <Badge tone="outline">Page {evidence.page}</Badge>
+        <Badge tone="outline">{evidence.page > 0 ? `Page ${evidence.page}` : 'Page unavailable'}</Badge>
         <Badge tone="outline">Lines {evidence.lines}</Badge>
         <Badge tone={evidence.relevance === 'High' ? 'accent' : 'neutral'}>
           {evidence.relevance} relevance

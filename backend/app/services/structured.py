@@ -536,7 +536,7 @@ def answer_execution(query: str, result: Execution, table_units: list[Evidence])
             if quote not in row.snippet:
                 raise StructuredError("cell_evidence_mismatch", "A cited cell is absent from its stored row.")
             citations.append(Citation(id=f"cit_{uuid4().hex[:10]}", ordinal=len(citations) + 1,
-                evidence_unit_id=row.id, snippet=quote, sheet_name=metadata.sheet_name,
+                evidence_unit_id=row.id, snippet=quote, page=row.page, sheet_name=metadata.sheet_name,
                 row_number=metadata.row_number, column=", ".join(metadata.headers[i] for i in group)))
 
     if result.plan.operation == "lookup":

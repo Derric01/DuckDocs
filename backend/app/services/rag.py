@@ -1227,7 +1227,7 @@ class RagService:
                 if old.key_value.unit_count and len(doc_units) != old.key_value.unit_count:
                     raise structured.StructuredError("incomplete_keys", "The stored key paths are incomplete. Re-ingest the document.")
             citations = [Citation(id=f"cit_{uuid4().hex[:10]}", ordinal=i, evidence_unit_id=e.id,
-                                  snippet=e.snippet, key_path=e.key_value.path) for i, e in enumerate(selected, 1)]
+                                  snippet=e.snippet, page=e.page, key_path=e.key_value.path) for i, e in enumerate(selected, 1)]
             return GroundedResponse(**response, outcome="grounded", answer="\n".join(e.snippet for e in selected),
                                     grounded=True, citations=citations, retrieved_chunk_count=len(units),
                                     diagnostic={"structured_operation": "key_lookup", "verified": True})
@@ -1574,6 +1574,7 @@ class RagService:
                     ordinal=ordinal,
                     evidence_unit_id=evidence.id,
                     snippet=snippet,
+                    page=evidence.page,
                 )
             )
             ordinal += 1

@@ -160,6 +160,7 @@ class Citation(BaseModel):
     ordinal: int
     evidence_unit_id: str
     snippet: str
+    page: int | None = Field(default=None, ge=1)
     sheet_name: str | None = None
     row_number: int | None = None
     column: str | None = None

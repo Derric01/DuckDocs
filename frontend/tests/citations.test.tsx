@@ -74,6 +74,17 @@ describe('groupCitations', () => {
 });
 
 describe('CitationList', () => {
+  it('displays a DOCX citation physical page', () => {
+    render(<CitationList citations={[evidence({ id: 'docx_page', documentName: 'report.docx', page: 7 })]} onSelect={() => {}} />);
+    expect(screen.getByText('Page 7')).toBeInTheDocument();
+  });
+
+  it('does not invent page one for an unavailable citation location', () => {
+    render(<CitationList citations={[evidence({ id: 'missing', page: 0 })]} onSelect={() => {}} />);
+    expect(screen.getByText('Page unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Page 1')).not.toBeInTheDocument();
+  });
+
   it('states how many passages came from how many documents', () => {
     render(
       <CitationList
