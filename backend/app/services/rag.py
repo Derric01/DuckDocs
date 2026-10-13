@@ -150,6 +150,13 @@ class GroundingGate:
                     cited_ids=[],
                     reason=reason,
                 )
+            if _answer_type_missing(query, cited_ids, evidence_by_id):
+                return GateResult(
+                    outcome="insufficient_evidence",
+                    text=None,
+                    cited_ids=[],
+                    reason="answer_type_missing",
+                )
             normalized = f"{answer.rstrip('.!?')} [chunk:{cited_ids[0]}]."
             return GateResult(
                 outcome="grounded",
@@ -197,6 +204,13 @@ class GroundingGate:
         ]
 
         if task == "ask" and cited_ids:
+            if _answer_type_missing(query, cited_ids, evidence_by_id):
+                return GateResult(
+                    outcome="insufficient_evidence",
+                    text=None,
+                    cited_ids=cited_ids,
+                    reason="answer_type_missing",
+                )
             sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", stripped) if part.strip()]
             factual = [sentence for sentence in sentences if _looks_factual(sentence)]
             uncited = [
@@ -357,6 +371,32 @@ def _quote_matches(quote: str, source: str) -> bool:
     if normalized_quote in normalized_source:
         return True
     return SequenceMatcher(None, normalized_quote, normalized_source).ratio() >= 0.9
+
+
+def _answer_type_missing(
+    query: str | None,
+    cited_ids: list[str],
+    evidence_by_id: dict[str, str] | None,
+) -> bool:
+    if not query or not evidence_by_id:
+        return False
+    lowered = query.lower()
+    asks_numeric = bool(
+        re.search(r"\b(?:how much|how many|what price|price|cost|amount|rate|count)\b", lowered)
+    )
+    asks_date = bool(re.search(r"\bwhen\b", lowered))
+    if not asks_numeric and not asks_date:
+        return False
+    source = " ".join(evidence_by_id.get(evidence_id, "") for evidence_id in cited_ids)
+    if asks_date and re.search(
+        r"\b(?:19|20)\d{2}\b|\b\d{1,2}[/-]\d{1,2}[/-](?:\d{2}|\d{4})\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b",
+        source,
+        flags=re.I,
+    ):
+        return False
+    if asks_numeric and re.search(r"\b\d+(?:[.,]\d+)*\b|[$€£]\s?\d|\b\d+\s?%", source):
+        return False
+    return True
 
 
 def _looks_like_junk_output(output: str, query: str | None) -> bool:

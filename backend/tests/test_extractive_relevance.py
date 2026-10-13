@@ -170,6 +170,28 @@ def test_grounding_gate_checks_short_cited_claims() -> None:
     assert result.reason == "content_not_grounded"
 
 
+def test_grounding_gate_requires_number_for_count_question() -> None:
+    result = GroundingGate().validate(
+        "There are several units. [chunk:ev_inventory]",
+        {"ev_inventory"},
+        evidence_by_id={"ev_inventory": "Widget A is available in stock."},
+        query="How many units of Widget A are in stock?",
+    )
+
+    assert result.reason == "answer_type_missing"
+
+
+def test_grounding_gate_accepts_number_for_count_question() -> None:
+    result = GroundingGate().validate(
+        "There are 12 units. [chunk:ev_inventory]",
+        {"ev_inventory"},
+        evidence_by_id={"ev_inventory": "Widget A has 12 units in stock."},
+        query="How many units of Widget A are in stock?",
+    )
+
+    assert result.outcome == "grounded"
+
+
 def test_grounding_gate_accepts_json_key_value_answer() -> None:
     evidence = _json_evidence = type(
         "JsonEvidence", (), {"document_name": "config.json"}
