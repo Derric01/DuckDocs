@@ -436,6 +436,7 @@ def _attribute_missing(
     }
     attribute_terms = query_terms - rare_entity_terms
     attribute_terms -= _DOCUMENT_DESCRIPTOR_TERMS
+    attribute_terms -= _GROUNDING_STOP_WORDS
     if not rare_entity_terms or not attribute_terms:
         return False
     stemmed_source = {_stem(term) for term in source_terms}
