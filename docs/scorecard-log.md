@@ -81,6 +81,24 @@ result, while retaining both measurements because the 1B model can vary.
 **Aggregate:** 2 PASS, 3 PARTIAL, 8 FAIL; 0 passing answers with a
 wrong/missing citation.
 
+### Phase 3 final
+
+The support gate uses `DUCKDOCS_MIN_SUPPORT=0.1`. It is applied when the
+library has at least two documents, because IDF support is not meaningful in a
+single-document corpus. The highest refusal support score was 0.0738, giving
+0.0262 margin below the threshold; the lowest answerable score was 0.1358,
+giving 0.0358 margin above it. Numeric/date questions also require a matching
+number, currency amount, or date, and entity/property questions use
+rarity-weighted attribute support. Compact labels such as `Testmarker` are
+matched against spaced query terms.
+
+Container validation: `169 passed, 7 warnings in 35.13s`.
+
+Final rebuilt scorecard (`phase3-final3`), compared with
+`scorecard_phase4f-verify.json`: 8 PASS, 3 PARTIAL, 2 FAIL; no regressions.
+The two remaining failures are Q6 (citation-density validation) and Q8
+(claim-not-in-evidence); these are not refusal-calibration regressions.
+
 ## Phase 4e validation
 
 The requested container bisect was run with a rebuild and a focused scorecard
