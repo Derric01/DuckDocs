@@ -11,7 +11,7 @@ from app.domain.models import Evidence
 from app.providers.keyword import KeywordEmbeddingAdapter
 from app.providers.ollama import OllamaChatAdapter
 from app.repositories.memory import DocumentRepository
-from app.services.rag import GroundingGate, RagService, _generate_chat
+from app.services.rag import GroundingGate, RagService, _generate_chat, _query_format_extensions
 from app.services.vector_store import RetrievedChunk, VectorStore
 
 
@@ -111,3 +111,47 @@ def test_model_cannot_use_text_beyond_the_displayed_passage_cap(tmp_path: Path) 
     response = service.ask("What is the access code in the JSON file?")
     assert "AMBER" not in chat.prompt
     assert response.diagnostic["model_rejected"] == "claim_not_in_evidence"
+
+
+@pytest.mark.parametrize("word", ["Excel", "xlsx"])
+def test_explicit_excel_does_not_accept_csv_even_when_xlsx_is_absent(word: str) -> None:
+    assert _query_format_extensions(f"value in the {word.lower()} spreadsheet", {"csv"}) == {"xlsx"}
+    csv = _evidence("csv", "budget.csv", "The annual budget is 64 dollars.")
+    result = GroundingGate().validate(
+        '{"answer":"The annual budget is 64 dollars.","evidence_ids":[1]}', {"1"},
+        evidence_by_id={"1": csv.snippet}, evidence_metadata={"1": csv},
+        query=f"What is the annual budget in the {word} spreadsheet?",
+    )
+    assert result.reason == "format_mismatch"
+
+
+@pytest.mark.parametrize("word", ["spreadsheet", "sheet"])
+def test_generic_sheet_allows_csv_but_prefers_xlsx(tmp_path: Path, word: str) -> None:
+    csv = _evidence("csv", "budget.csv", "The annual budget is 64 dollars.")
+    excel = _evidence("excel", "budget.xlsx", "The annual budget is 42 dollars.")
+    service = _service(tmp_path, [csv, excel], _Chat('{"answer":"","evidence_ids":[]}'))
+    chunks = service.retrieve(f"What is the annual budget in the {word}?")
+    assert [chunk.evidence.document_name for chunk in chunks] == ["budget.xlsx", "budget.csv"]
+    result = GroundingGate().validate(
+        '{"answer":"The annual budget is 64 dollars.","evidence_ids":[1]}', {"1"},
+        evidence_by_id={"1": csv.snippet}, evidence_metadata={"1": csv},
+        query=f"What is the annual budget in the {word}?",
+    )
+    assert result.outcome == "grounded"
+
+
+def test_explicit_csv_in_a_spreadsheet_question_stays_csv(tmp_path: Path) -> None:
+    csv = _evidence("csv", "budget.csv", "The annual budget is 64 dollars.")
+    excel = _evidence("excel", "budget.xlsx", "The annual budget is 42 dollars.")
+    service = _service(tmp_path, [csv, excel], _Chat('{"answer":"","evidence_ids":[]}'))
+    chunks = service.retrieve("What is the annual budget in the CSV spreadsheet?")
+    assert [chunk.evidence.document_name for chunk in chunks] == ["budget.csv"]
+
+
+@pytest.mark.parametrize("word", ["Excel", "xlsx"])
+def test_explicit_excel_retrieval_with_both_formats_keeps_only_xlsx(tmp_path: Path, word: str) -> None:
+    csv = _evidence("csv", "budget.csv", "The annual budget is 64 dollars.")
+    excel = _evidence("excel", "budget.xlsx", "The annual budget is 42 dollars.")
+    service = _service(tmp_path, [csv, excel], _Chat('{"answer":"","evidence_ids":[]}'))
+    chunks = service.retrieve(f"What is the annual budget in the {word} file?")
+    assert [chunk.evidence.document_name for chunk in chunks] == ["budget.xlsx"]

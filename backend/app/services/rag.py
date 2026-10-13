@@ -373,14 +373,15 @@ def _evidence_matches_query_hints(
 
 def _query_format_extensions(query: str, available: set[str]) -> set[str]:
     """Resolve format words to extensions that are actually present."""
+    if re.search(r"\b(?:excel|xlsx)\b", query):
+        return {"xlsx"}
+    if re.search(r"\bcsv\b", query):
+        return {"csv"}
     groups = {
         "pdf": {"pdf"},
         "docx": {"docx", "doc"},
         "word": {"docx", "doc"},
-        "xlsx": {"xlsx", "xls", "csv"},
-        "excel": {"xlsx", "xls", "csv"},
         "spreadsheet": {"xlsx", "xls", "csv"},
-        "csv": {"csv"},
         "yaml": {"yaml", "yml"},
         "json": {"json"},
         "xml": {"xml"},
@@ -396,6 +397,8 @@ def _query_format_extensions(query: str, available: set[str]) -> set[str]:
         "photo": {"png", "jpg", "jpeg", "gif", "webp"},
     }
     requested = set().union(*(extensions for phrase, extensions in groups.items() if phrase in query))
+    if re.search(r"\bsheets?\b", query):
+        requested.update({"xlsx", "xls", "csv"})
     present = requested & available
     return present if present else requested
 
@@ -873,6 +876,7 @@ class RagService:
         result = self._dedupe_chunks(sorted(
             ranked,
             key=lambda item: (
+                self._spreadsheet_preference(query, item.evidence),
                 item.score,
                 item.raw_cosine + item.lexical_coverage + self._document_name_boost(query, item.evidence),
             ),
@@ -928,6 +932,12 @@ class RagService:
         ]
 
     @staticmethod
+    def _spreadsheet_preference(query: str, evidence: Evidence) -> int:
+        generic = re.search(r"\b(?:spreadsheets?|sheets?)\b", query, flags=re.I)
+        explicit_csv = re.search(r"\bcsv\b", query, flags=re.I)
+        return int(bool(generic and not explicit_csv and evidence.document_name.lower().endswith(".xlsx")))
+
+    @staticmethod
     def _document_name_boost(query: str, evidence: Evidence) -> float:
         query_terms = _split_terms(query)
         name_terms = _split_terms(evidence.document_name)
@@ -961,7 +971,8 @@ class RagService:
             if item.id in candidate_ids
         }
         expected = _query_format_extensions(lowered, available)
-        if expected and extension not in expected and not re.search(r"\b[\w-]+\.[a-z0-9]{2,5}\b", lowered):
+        explicit_excel = re.search(r"\b(?:excel|xlsx)\b", lowered)
+        if expected and extension not in expected and (explicit_excel or not re.search(r"\b[\w-]+\.[a-z0-9]{2,5}\b", lowered)):
             return False
         page_match = re.search(r"\bpage\s+(\d+)\b", lowered)
         if page_match and evidence.page != int(page_match.group(1)):
