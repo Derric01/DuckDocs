@@ -34,6 +34,34 @@ def mentioned(value: str, query: str) -> bool:
     return bool(value and re.search(rf"(?<!\w){re.escape(value)}(?!\w)", normalized(query)))
 
 
+# Aliases describe schema concepts, never document names or cell values.
+_COLUMN_VOCABULARY = (
+    (("salary", "wage", "pay", "earning", "compensation"),
+     ("salary", "wage", "pay", "earn", "earning", "paid", "compensation")),
+    (("unit", "quantity", "qty", "stock", "inventory"),
+     ("unit", "quantity", "qty", "stock", "inventory", "available", "on hand", "in stock")),
+    (("revenue", "receipt", "sales", "turnover"), ("revenue", "receipt", "sales", "turnover")),
+    (("price", "cost", "fee", "charge"), ("price", "cost", "fee", "charge")),
+    (("name", "person", "employee", "worker", "staff"), ("name", "person", "employee", "worker", "staff", "people")),
+    (("department", "dept", "team", "division"), ("department", "dept", "team", "division")),
+)
+
+
+def mapped_columns(headers: list[str], query: str) -> tuple[int, ...]:
+    exact = {i for i, header in enumerate(headers) if mentioned(header, query)}
+    selected = set(exact)
+    for labels, words in _COLUMN_VOCABULARY:
+        if not any(mentioned(word, query) for word in words):
+            continue
+        candidates = {i for i, header in enumerate(headers) if any(mentioned(label, header) for label in labels)}
+        explicit = candidates & exact
+        candidates = explicit or candidates
+        if len(candidates) > 1 and not explicit:
+            raise StructuredError("ambiguous_column", "Several columns match this wording. Name the exact header.")
+        selected.update(candidates)
+    return tuple(sorted(selected))
+
+
 @dataclass(frozen=True)
 class Number:
     value: Decimal
@@ -126,12 +154,12 @@ def plan_question(query: str, units: list[Evidence]) -> Plan:
     operation: Operation = "lookup"
     for pattern, op in [(r"\b(?:average|mean)\b", "average"), (r"\b(?:minimum|min|lowest|smallest)\b", "min"),
                         (r"\b(?:maximum|max|highest|largest)\b", "max"), (r"\b(?:sum|total)\b", "sum"),
-                        (r"\bcount\b|\bhow many (?:rows|records|entries|employees|people|items)\b", "count")]:
+                        (r"\bcount\b|\b(?:how many|number of)\s+(?:rows|records|entries|employees|people|items|staff|workers|persons|products)\b", "count")]:
         if re.search(pattern, lowered):
             operation = op
             break
     target_question = re.split(r"\bwhere\b", query, maxsplit=1, flags=re.I)[0]
-    columns = tuple(i for i, header in enumerate(headers) if mentioned(header, target_question))
+    columns = mapped_columns(headers, target_question)
     if operation not in {"count", "lookup"} and len(columns) != 1:
         raise StructuredError("column_unmapped", "I cannot map this calculation to one table column. Name the column explicitly.")
     if operation == "lookup" and not columns:
