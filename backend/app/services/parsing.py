@@ -22,6 +22,7 @@ import re
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from decimal import Decimal
 from html.parser import HTMLParser
 from typing import Literal
 from xml.etree import ElementTree
@@ -293,8 +294,15 @@ def parse_xlsx(payload: bytes) -> ParsedDocument | None:
     pages: list[ParsedPage] = []
     for index, sheet in enumerate(workbook.worksheets, start=1):
         rows: list[list[str]] = []
-        for row in sheet.iter_rows(values_only=True):
-            rows.append(["" if cell is None else str(cell).strip() for cell in row])
+        for row in sheet.iter_rows():
+            cells: list[str] = []
+            for cell in row:
+                value = cell.value
+                if isinstance(value, (int, float)) and "%" in cell.number_format:
+                    cells.append(f"{Decimal(str(value)) * 100}%")
+                else:
+                    cells.append("" if value is None else str(value).strip())
+            rows.append(cells)
         table = _table_rows(rows, sheet.title)
         if table:
             pages.append(ParsedPage(index, "\n".join(row.quote() for row in table), "native", table_rows=table))
