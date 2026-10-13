@@ -39,3 +39,24 @@ def test_aliases_do_not_guess_unknown_or_ambiguous_attributes():
             plan_question(query, units)
         assert error.value.code in {"column_unmapped", "ambiguous_column"}
     assert plan_question("What is the Net Pay for Nora?", units).columns == (2,)
+
+
+def test_person_counts_do_not_need_to_choose_id_or_name_projection():
+    units = table(b'Employee ID,Employee Name,Salary\n21,Nora,8100\n37,Omar,6700\n')
+    result = execute(plan_question("How many employees are recorded?", units), units)
+    assert result.value.value == 2
+
+
+def test_quantity_alias_does_not_bind_unit_price_or_stock_valuation():
+    units = table(b'Product,Unit Price,Stock Value\nCog,19,31\n')
+    with pytest.raises(StructuredError) as error:
+        plan_question("How many units of Cog are available?", units)
+    assert error.value.code == "column_unmapped"
+    assert plan_question("What is the Unit Price for Cog?", units).columns == (1,)
+
+
+def test_pay_alias_does_not_bind_numeric_grade_or_period():
+    units = table(b'Person,Salary Band,Pay Period\nNora,7,2026\n')
+    with pytest.raises(StructuredError) as error:
+        plan_question("How much does Nora earn?", units)
+    assert error.value.code == "column_unmapped"

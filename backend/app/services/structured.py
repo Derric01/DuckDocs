@@ -48,18 +48,35 @@ _COLUMN_VOCABULARY = (
 )
 
 
-def mapped_columns(headers: list[str], query: str) -> tuple[int, ...]:
+def _header_matches(labels: tuple[str, ...], header: str) -> bool:
+    if not any(mentioned(label, header) for label in labels):
+        return False
+    if labels[0] in {"salary", "unit", "revenue", "price"}:
+        categorical = ("id", "code", "name", "person", "type", "status", "band", "grade", "centre", "center")
+        temporal = ("date", "month", "year", "period") if not mentioned("per", header) else ()
+        if any(mentioned(word, header) for word in categorical + temporal):
+            return False
+        if labels[0] == "unit" and any(mentioned(word, header) for word in ("price", "cost", "fee", "charge", "value", "rate")):
+            return False
+    return True
+
+
+def mapped_columns(headers: list[str], query: str, counting: bool = False) -> tuple[int, ...]:
     exact = {i for i, header in enumerate(headers) if mentioned(header, query)}
     selected = set(exact)
     for labels, words in _COLUMN_VOCABULARY:
         if not any(mentioned(word, query) for word in words):
             continue
-        candidates = {i for i, header in enumerate(headers) if any(mentioned(label, header) for label in labels)}
+        candidates = {i for i, header in enumerate(headers) if _header_matches(labels, header)}
         if not candidates:
+            if any(any(mentioned(label, headers[i]) for label in labels) for i in exact):
+                continue  # Explicit categorical/compound headers remain usable.
             raise StructuredError("column_unmapped", "The requested field is not represented by this table's headers.")
         explicit = candidates & exact
         candidates = explicit or candidates
         if len(candidates) > 1 and not explicit:
+            if counting and labels[0] == "name":
+                continue  # Counting people does not require choosing their ID/name projection.
             raise StructuredError("ambiguous_column", "Several columns match this wording. Name the exact header.")
         selected.update(candidates)
     return tuple(sorted(selected))
@@ -220,6 +237,21 @@ def cell_mentioned(value: str, query: str) -> bool:
     return bool(value.strip() and re.search(rf"(?<!\w){re.escape(value.strip())}(?!\w)", query, re.I))
 
 
+def table_entity_mentioned(units: list[Evidence], query: str) -> bool:
+    """Identify a table by a literal entity, without treating dates as entities."""
+    labels = ("name", "person", "employee", "worker", "staff", "item", "product", "sku",
+              "category", "team", "department", "dept", "division")
+    for unit in units:
+        row = unit.table_row
+        if row is None or row.is_header:
+            continue
+        for header, value in zip(row.headers, row.cells):
+            if (any(mentioned(label, header) for label in labels)
+                    and re.search(r"[A-Za-z]", value) and cell_mentioned(value, query)):
+                return True
+    return False
+
+
 def requested_operation(query: str, headers: list[str], rows: list[Evidence]) -> Operation:
     target = re.split(r"\b(?:where|with|whose|for)\b", query, maxsplit=1, flags=re.I)[0]
     target = re.sub(r'"[^\"]*"|\'[^\']*\'', " ", target)
@@ -290,7 +322,7 @@ def _month_filters(query: str, headers: list[str], rows: list[Evidence]):
 def _filter_prefixes(headers: list[str]) -> dict[str, set[int]]:
     prefixes = {header: {i} for i, header in enumerate(headers) if header}
     for labels, words in _COLUMN_VOCABULARY:
-        columns = {i for i, header in enumerate(headers) if any(mentioned(label, header) for label in labels)}
+        columns = {i for i, header in enumerate(headers) if _header_matches(labels, header)}
         for word in words:
             if columns:
                 prefixes.setdefault(word, set()).update(columns)
@@ -308,7 +340,7 @@ def plan_question(query: str, units: list[Evidence]) -> Plan:
     query = re.sub(r"^\s*may\s+(?:you|i)\b", "", query, flags=re.I)
     operation = requested_operation(query, headers, rows)
     target_question = re.split(r"\b(?:where|with|whose|for)\b", query, maxsplit=1, flags=re.I)[0]
-    columns = mapped_columns(headers, target_question)
+    columns = mapped_columns(headers, target_question, counting=operation == "count")
     if operation not in {"count", "lookup"} and len(columns) != 1:
         raise StructuredError("column_unmapped", "I cannot map this calculation to one table column. Name the column explicitly.")
     if operation == "lookup" and not columns:
@@ -366,7 +398,7 @@ def plan_question(query: str, units: list[Evidence]) -> Plan:
         field_reference = normalized(text).removeprefix("the ")
         field_names = {normalized(h) for h in headers}
         field_names.update(normalized(word) for labels, words in _COLUMN_VOCABULARY for word in words
-                           if any(mentioned(label, h) for label in labels for h in headers))
+                           if any(_header_matches(labels, h) for h in headers))
         if (field_reference in field_names
             or (operation == "count" and re.fullmatch(r"rows?|records?|entries|employees?|people|items?|staff|workers?|persons?|products?", text, re.I))
             or re.fullmatch(r"(?:USD|EUR|GBP|INR|JPY|CAD|AUD|dollars?|euros?|rupees?|currency)", text, re.I)

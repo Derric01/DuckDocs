@@ -39,6 +39,22 @@ literal cell identities, missing filters and a deliberately altered executor
 plan whose arithmetic is otherwise correct. The combined focused check passed
 102 container tests. The original failures were reproduced before fixing them.
 
+Validation additionally prevents quantity aliases from binding unit prices/stock
+valuations and pay aliases from binding grades, IDs or periods. Exact compound
+headers remain usable. Person counts can use tables containing both ID and name
+columns without choosing a projection. A literal person/product in an entity
+column keeps an unmapped measure on the deterministic refusal path instead of
+falling through to a model. Calendar words in month/date columns do not activate
+that path for ordinary document questions. Six additional synthetic cases bring
+the new case count to 36; the focused regression suite passed 108 tests.
+
+The full preliminary container suite passed 297 tests before these last boundary
+cases. The rebuilt preliminary scorecard was 12 PASS / 0 PARTIAL / 1 FAIL, exactly
+matching the Phase 5 baseline, with zero passing wrong/missing citations. The
+final committed HEAD is rebuilt and checked separately. Its complete commands,
+outputs, per-question baseline comparison, source files, timing, plans and changed
+files are recorded in output/phase5b/Phase5b_Report.txt at the workspace root.
+
 These are verified failure classes, not claims that any unseen private question
 has passed. The operator must rerun the private check independently before
 accepting Phase 5b or proceeding to Phase 6.

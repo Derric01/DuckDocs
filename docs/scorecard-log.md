@@ -128,6 +128,33 @@ seconds/answer starts, baseline comparison and changed files are recorded in
 `output/phase5/Phase5_Report.txt` (workspace root). Q6's pre-existing DOCX/page
 limitation remains. Phase 6 was not started; no held-out files were accessed.
 
+## Phase 5b — structured query selection follow-up (13 October 2026)
+
+Baseline: measured Phase 5 HEAD `a8f8543`, `scorecard_phase5-verify.json`
+(12 PASS / 0 PARTIAL / 1 FAIL). The operator's independent results rejected Phase
+5 acceptance despite its public scorecard; the follow-up targets reported failure
+classes without inspecting private questions or expected answers.
+
+Changes: unambiguous schema aliases/natural person counts; source/sheet selectors
+and schema feasibility instead of row-frequency scores; inclusive month ranges,
+literal entity binding, comparison aliases and question-plan verification before
+independent arithmetic checks. Synthetic tests retain refusals for ambiguous or
+unsupported plans, missing entities, and money/quantity alias collisions.
+
+The preliminary full container suite passed 297 tests. Its rebuilt public
+scorecard remained 12/0/1 with no regressions or passing wrong/missing citations.
+Six final schema-boundary/routing cases passed in the 108-test focused suite:
+missing measures for identified table entities refuse deterministically, while
+calendar words alone do not redirect ordinary document questions. Final
+committed-HEAD tests, all 13 baseline-column rows, source/provider/timing/answer
+starts, plan traces and changed files are in
+`output/phase5b/Phase5b_Report.txt` (workspace root). The public result is expected
+to be neutral: these generic wording/selection failures are not covered by its
+13 questions. Private acceptance still requires the operator's independent rerun.
+
+No migration, re-ingestion, new dependency, default model/threshold change, push
+or Phase 6 work is included.
+
 ### Phase 3 final
 
 The support gate uses `DUCKDOCS_MIN_SUPPORT=0.1`. It is applied when the

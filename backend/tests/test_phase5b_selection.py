@@ -61,3 +61,26 @@ def test_truly_ambiguous_matching_sheets_still_refuse(tmp_path):
             ("North", [["Product", "Units"], ["Gear", 11]]),
             ("South", [["Product", "Units"], ["Gear", 29]])]))
         assert ask(client, "What Units are recorded for Gear?", doc)["refusal_reason"] == "ambiguous_table"
+
+
+@pytest.mark.parametrize("payload,question", [
+    (b'Product,Unit Price\nCog,19\n', "How many units of Cog are available?"),
+    (b'Person,Salary Band\nNora,7\n', "How much does Nora earn?"),
+])
+def test_identified_entity_with_missing_measure_does_not_fall_through_to_model(tmp_path, payload, question):
+    with client_with_data_root(tmp_path) as client:
+        upload(client, "records.csv", payload)
+        result = ask(client, question)
+        assert not result["grounded"]
+        assert result["provider"]["name"] == "deterministic"
+        assert result["refusal_reason"] == "column_unmapped"
+
+
+def test_calendar_word_is_not_a_table_entity_anchor(tmp_path):
+    with client_with_data_root(tmp_path) as client:
+        upload(client, "periods.csv", b'Month,Units\nJanuary,99\n')
+        upload(client, "museum.txt", b'In January the museum entrance fee is JPY 24 per visitor. The archive is open daily.')
+        result = ask(client, "What entrance fee is charged at the museum in January?")
+        assert result["grounded"]
+        assert "24" in result["answer"]
+        assert result["provider"]["name"] != "deterministic"

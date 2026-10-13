@@ -1160,7 +1160,8 @@ class RagService:
                         or structured.requested_operation(effective, units[0].table_row.headers,
                                                           [u for u in units if not u.table_row.is_header]) == "count")
             except structured.StructuredError as error:
-                return error.code == "ambiguous_column"
+                return (error.code == "ambiguous_column"
+                        or (error.code == "column_unmapped" and structured.table_entity_mentioned(units, query)))
         if not tables or (not explicit and not any(supported(units) for units in tables.values())):
             return None
         response = dict(id=f"resp_{uuid4().hex[:12]}", kind="ask", query=query,
