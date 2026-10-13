@@ -216,6 +216,26 @@ def test_grounding_gate_accepts_attribute_with_stemmed_match() -> None:
     assert result.outcome == "grounded"
 
 
+def test_phase_three_refusal_reason_codes_are_distinct() -> None:
+    answer_type = GroundingGate().validate(
+        "There are several units. [chunk:ev]",
+        {"ev"},
+        evidence_by_id={"ev": "Widget A is in stock."},
+        query="How many units are there?",
+    )
+    attribute = GroundingGate().validate(
+        "Priya Nair works here. [chunk:ev]",
+        {"ev"},
+        evidence_by_id={"ev": "Priya Nair works here."},
+        query="What is Priya Nair's department?",
+        term_document_frequency={"priya": 1, "nair": 1, "department": 1},
+    )
+
+    assert answer_type.reason == "answer_type_missing"
+    assert attribute.reason == "attribute_missing"
+    assert answer_type.reason != attribute.reason
+
+
 def test_grounding_gate_accepts_json_key_value_answer() -> None:
     evidence = _json_evidence = type(
         "JsonEvidence", (), {"document_name": "config.json"}
