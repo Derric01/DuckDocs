@@ -20,8 +20,10 @@ from app.services.parsing import (
     IMAGE_EXTENSIONS,
     PLAIN_TEXT_EXTENSIONS,
     STRUCTURED_TEXT_EXTENSIONS,
-    SUPPORTED_EXTENSIONS,
     probe_page_count,
+    detect_file_type,
+    detected_mime,
+    FileDetectionError,
 )
 from app.services.preview import render_image_page, render_pdf_page
 
@@ -131,16 +133,13 @@ async def upload_documents(
     items: list[UploadItem] = []
     for file in files:
         suffix = Path(file.filename or "").suffix.lower().lstrip(".")
-        if suffix not in SUPPORTED_EXTENSIONS:
-            raise DuckDocsError(
-                "unsupported_file_type",
-                f".{suffix or 'file'} is not supported.",
-                415,
-                "Choose PDF, Office documents, spreadsheets, presentations, images, or text/code files.",
-            )
         payload = await file.read()
         if len(payload) > runtime.max_file_size:
             raise DuckDocsError("file_too_large", f"{file.filename} exceeds the 50 MB upload limit.", 413)
+        try:
+            suffix = detect_file_type(payload, suffix)
+        except FileDetectionError as exc:
+            raise DuckDocsError("unsupported_file_content", str(exc), 415, "Export a valid supported document and upload it again.") from exc
 
         document_id = f"doc_{uuid4().hex[:12]}"
         now = utc_now()
@@ -148,7 +147,7 @@ async def upload_documents(
             id=document_id,
             name=file.filename or "Untitled file",
             file_type=suffix,
-            mime_type=file.content_type or "application/octet-stream",
+            mime_type=detected_mime(suffix),
             size_bytes=len(payload),
             status="processing",
             fidelity_tier="ocr_dependent" if suffix in IMAGE_EXTENSIONS else "structural",

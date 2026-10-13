@@ -358,7 +358,7 @@ def _evidence_matches_query_hints(
         return True
     lowered = query.lower()
     name = evidence.document_name.lower()
-    extension = name.rsplit(".", 1)[-1] if "." in name else ""
+    extension = evidence.file_type or (name.rsplit(".", 1)[-1] if "." in name else "")
     expected = _query_format_extensions(lowered, {extension})
     if expected and extension not in expected:
         return False
@@ -531,7 +531,7 @@ def _answer_adds_no_information(answer: str, query: str | None) -> bool:
 def _is_structured_document(evidence: Evidence | None) -> bool:
     if evidence is None or "." not in evidence.document_name:
         return False
-    return evidence.document_name.rsplit(".", 1)[-1].lower() in {"xml", "yaml", "yml", "json", "csv"}
+    return (evidence.file_type or evidence.document_name.rsplit(".", 1)[-1].lower()) in {"xml", "yaml", "yml", "json", "csv"}
 
 
 def _looks_like_structured_answer(value: str) -> bool:
@@ -958,7 +958,7 @@ class RagService:
     def _spreadsheet_preference(query: str, evidence: Evidence) -> int:
         generic = re.search(r"\b(?:spreadsheets?|sheets?)\b", query, flags=re.I)
         explicit_csv = re.search(r"\bcsv\b", query, flags=re.I)
-        return int(bool(generic and not explicit_csv and evidence.document_name.lower().endswith(".xlsx")))
+        return int(bool(generic and not explicit_csv and (evidence.file_type or evidence.document_name.lower().rsplit(".", 1)[-1]) == "xlsx"))
 
     @staticmethod
     def _document_name_boost(query: str, evidence: Evidence) -> float:
@@ -983,8 +983,9 @@ class RagService:
 
     def _matches_candidate_hints(self, query: str, evidence: Evidence, candidate_ids: set[str]) -> bool:
         lowered = query.lower()
-        extension = evidence.document_name.lower().rsplit(".", 1)[-1]
-        if re.search(r"\b(?:excel|xlsx)\b", lowered) and extension != "xlsx":
+        extension = evidence.file_type or evidence.document_name.lower().rsplit(".", 1)[-1]
+        if ((re.search(r"\b(?:excel|xlsx)\b", lowered) and extension != "xlsx")
+            or (re.search(r"\bcsv\b", lowered) and not re.search(r"[\w-]+\.csv\b", lowered) and extension != "csv")):
             return False
         if re.search(rf"(?<!\w){re.escape(evidence.document_name)}(?!\w)", query, flags=re.I):
             return True
@@ -993,7 +994,7 @@ class RagService:
         if "scanned" in lowered and evidence.fidelity_tier != "ocr_dependent":
             return False
         available = {
-            item.document_name.lower().rsplit(".", 1)[-1]
+            item.file_type or item.document_name.lower().rsplit(".", 1)[-1]
             for item in self.repository.evidence.values()
             if item.id in candidate_ids
         }

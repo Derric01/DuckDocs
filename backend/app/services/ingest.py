@@ -28,7 +28,7 @@ from app.core.config import Settings
 from app.domain.models import IngestJob
 from app.repositories import AnyRepository
 from app.services.chunking import AnchorQuality, chunk_document
-from app.services.parsing import ParsedDocument, parse_upload
+from app.services.parsing import ParsedDocument, parse_upload, detect_file_type, detected_mime, FileDetectionError
 from app.services.rag import RagService
 from app.services.summarize import (
     DocumentSummary,
@@ -145,6 +145,10 @@ async def process_ingest(
     """
     try:
         await _run_pipeline(repo, rag, runtime, document_id, job_id, payload, suffix)
+    except FileDetectionError as exc:
+        repo.update_job(job_id, status="failed", stage="failed", progress_pct=100,
+                        error={"stage": "parsing", "reason_code": "unsupported_file_content", "human_message": str(exc)})
+        repo.update_document(document_id, status="failed")
     except Exception:
         # An unexpected failure must still leave honest state behind rather
         # than a job frozen at whatever stage it reached.
@@ -173,6 +177,8 @@ async def _run_pipeline(
     suffix: str,
 ) -> None:
     repo.update_job(job_id, status="processing", stage="parsing", progress_pct=5)
+    suffix = detect_file_type(payload, suffix)
+    repo.update_document(document_id, file_type=suffix, mime_type=detected_mime(suffix))
 
     last_reported = 0
 
@@ -201,7 +207,9 @@ async def _run_pipeline(
             error={
                 "stage": "parsing",
                 "reason_code": "no_extractable_content",
-                "human_message": "DuckDocs could not find readable text in this file (via native parsing or OCR).",
+                "human_message": ("The structured file has invalid syntax, duplicate keys or unsupported nesting. Export a valid file and retry."
+                                  if suffix in {"json", "yaml", "yml", "xml"} else
+                                  "DuckDocs could not find readable text in this file (via native parsing or OCR)."),
             },
         )
         repo.update_document(document_id, status="review")

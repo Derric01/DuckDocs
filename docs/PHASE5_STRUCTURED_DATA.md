@@ -38,3 +38,15 @@ only the named collection's values, and unrelated XML attributes are excluded.
 Duplicate keys, unsafe YAML tags, cyclic aliases and XML entity declarations are
 rejected. PyYAML 6.0.3 is now directly pinned (it was already a small transitive
 dependency); it does not download models or make network calls.
+
+Binary content signatures and OOXML archive members determine PDF/image/Office
+formats before ingestion. An XLSX named .csv retains its original name/bytes but
+is stored and parsed as XLSX, with the Excel MIME type and cell anchors. Retry also
+detects content again, repairing old format metadata. Corrupt/ambiguous ZIPs,
+legacy binary Office, unknown binary content and text masquerading as a binary
+format receive an actionable upload/retry error. YAML/CSV/plain text have no
+unique magic signature, so validated text still uses its supported extension.
+
+Two old test inputs were corrected: prose renamed JSON/XML is invalid structured
+syntax; a fake PK-prefixed string is not a DOCX archive. Both tests now use valid
+synthetic content while preserving their original format/download assertions.

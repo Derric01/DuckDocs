@@ -9,6 +9,8 @@ browser's native PDF viewer can page through a large document.
 from __future__ import annotations
 
 from pathlib import Path
+import io
+import zipfile
 
 from tests.test_ingestion import _native_pdf_bytes, client_with_data_root
 
@@ -51,13 +53,16 @@ def test_supports_range_requests_for_the_native_pdf_viewer(tmp_path: Path) -> No
 
 def test_opaque_office_formats_download_rather_than_render_blank(tmp_path: Path) -> None:
     """DOCX has no browser renderer; a download is honest, an inline blank tab is not."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>A valid synthetic office memo for download testing.</w:t></w:r></w:p></w:body></w:document>')
     with client_with_data_root(tmp_path) as client:
         upload = client.post(
             "/api/v1/documents",
             files={
                 "files": (
                     "memo.docx",
-                    b"PK\x03\x04not a real docx but the router only looks at metadata",
+                    buffer.getvalue(),
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 )
             },

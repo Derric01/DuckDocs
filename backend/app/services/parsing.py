@@ -108,6 +108,10 @@ def parse_upload(
     can report incremental progress; other formats parse fast enough that
     it isn't needed and the callback is simply never called.
     """
+    try:
+        suffix = detect_file_type(payload, suffix)
+    except FileDetectionError:
+        return None
     if suffix == "pdf":
         return parse_pdf(payload, settings, on_page)
     if suffix == "docx":
@@ -280,6 +284,69 @@ def _decode(payload: bytes) -> str | None:
         except UnicodeDecodeError:
             continue
     return None
+
+
+class FileDetectionError(ValueError):
+    """Human-readable content rejection, surfaced by upload and retry."""
+
+
+def detected_mime(suffix: str) -> str:
+    return {"pdf": "application/pdf", "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp",
+            "tiff": "image/tiff", "tif": "image/tiff", "bmp": "image/bmp", "csv": "text/csv",
+            "json": "application/json", "xml": "application/xml", "yaml": "application/yaml",
+            "yml": "application/yaml", "html": "text/html", "htm": "text/html"}.get(suffix, "text/plain")
+
+
+def detect_file_type(payload: bytes, suffix: str) -> str:
+    """Recognized binary signatures override names; ambiguous text uses its suffix."""
+    suffix = suffix.lower().lstrip(".")
+    if payload.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")):
+        try:
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                infos = archive.infolist()
+                if sum(info.file_size for info in infos) > 100 * 1024 * 1024 or any(info.flag_bits & 1 for info in infos):
+                    raise FileDetectionError("This Office archive is encrypted or expands beyond the 100 MB parsing limit.")
+                names = set(archive.namelist())
+                formats = [kind for kind, member in {"xlsx": "xl/workbook.xml", "docx": "word/document.xml",
+                                                      "pptx": "ppt/presentation.xml"}.items() if member in names]
+                if len(formats) != 1:
+                    raise FileDetectionError("This ZIP file is not an unambiguous Excel, Word or PowerPoint document.")
+                return formats[0]
+        except (zipfile.BadZipFile, OSError) as exc:
+            raise FileDetectionError("This file has a ZIP/Office signature but its archive is corrupt.") from exc
+    signatures = [(b"%PDF-", "pdf"), (b"\x89PNG\r\n\x1a\n", "png"), (b"\xff\xd8\xff", "jpg"),
+                  (b"II*\x00", "tiff"), (b"MM\x00*", "tiff"), (b"BM", "bmp")]
+    for magic, kind in signatures:
+        if payload.startswith(magic):
+            return suffix if (kind, suffix) in {("jpg", "jpeg"), ("tiff", "tif")} else kind
+    if payload.startswith(b"RIFF") and payload[8:12] == b"WEBP":
+        return "webp"
+    if payload.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+        raise FileDetectionError("Legacy binary Office files are unsupported. Export the file as XLSX, DOCX or PPTX.")
+    if payload.startswith((b"GIF87a", b"GIF89a")):
+        raise FileDetectionError("GIF files are unsupported. Convert the image to PNG or JPEG.")
+    decoded = _decode(payload)
+    if decoded is None:
+        raise FileDetectionError("The file has unrecognized binary content; renaming its extension will not make it readable.")
+    stripped = decoded.lstrip()
+    if re.match(r"<!doctype\s+html\b|<html\b", stripped, re.I):
+        return "html"
+    if re.match(r"<\?xml\b|<[A-Za-z_][\w:.-]*(?:\s|>)", stripped) and suffix not in CODE_EXTENSIONS:
+        return "html" if suffix in {"html", "htm"} else "xml"
+    if stripped.startswith(("{", "[")) and suffix not in CODE_EXTENSIONS:
+        try:
+            json.loads(stripped)
+            return "json"
+        except ValueError:
+            pass
+    if suffix in {"pdf", "docx", "xlsx", "pptx"} | IMAGE_EXTENSIONS:
+        raise FileDetectionError(f"The content is plain text, not a valid {suffix.upper()} file. Export it in the intended format.")
+    if suffix not in SUPPORTED_EXTENSIONS:
+        raise FileDetectionError("The content has no recognized file signature and its text extension is unsupported.")
+    return suffix
 
 
 def parse_plain_text(payload: bytes) -> ParsedDocument | None:
