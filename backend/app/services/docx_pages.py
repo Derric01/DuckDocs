@@ -61,22 +61,22 @@ def read_docx(payload: bytes) -> tuple[list[DocxBlock], int]:
                 if style.get(W + "type") == "paragraph" and _enabled_attribute(style, "default"):
                     default_style = style.get(W + "styleId", "")
 
-        def break_before(paragraph: ET.Element) -> bool:
-            direct = paragraph.find(f"{W}pPr/{W}pageBreakBefore")
+        def paragraph_property(paragraph: ET.Element, name: str) -> ET.Element | None:
+            direct = paragraph.find(f"{W}pPr/{W}{name}")
             if direct is not None:
-                return _enabled(direct)
+                return direct
             style_node = paragraph.find(f"{W}pPr/{W}pStyle")
             key = style_node.get(W + "val", "") if style_node is not None else default_style
             visited: set[str] = set()
             while key in styles and key not in visited:
                 visited.add(key)
                 style = styles[key]
-                value = style.find(f"{W}pPr/{W}pageBreakBefore")
+                value = style.find(f"{W}pPr/{W}{name}")
                 if value is not None:
-                    return _enabled(value)
+                    return value
                 base = style.find(W + "basedOn")
                 key = base.get(W + "val", "") if base is not None else ""
-            return False
+            return None
 
         paragraphs = list(_paragraphs(body))
         sections = [p.find(f"{W}pPr/{W}sectPr") for p, location in paragraphs if not location]
@@ -100,6 +100,8 @@ def read_docx(payload: bytes) -> tuple[list[DocxBlock], int]:
 
         for paragraph, location in paragraphs:
             parts: list[str] = []
+            outline = paragraph_property(paragraph, "outlineLvl")
+            heading = outline is not None and outline.get(W + "val", "9") in {str(i) for i in range(9)}
 
             def flush() -> None:
                 text = "".join(parts).strip()
@@ -110,10 +112,11 @@ def read_docx(payload: bytes) -> tuple[list[DocxBlock], int]:
                 if not location:
                     number = paragraph_counts.get(page, 0) + 1
                     paragraph_counts[page] = number
-                blocks.append(DocxBlock(page, text, number, location or f"Paragraph {number}", bool(location)))
+                address = location or f"{'Heading / ' if heading else ''}Paragraph {number}"
+                blocks.append(DocxBlock(page, text, number, address, bool(location)))
                 occupied.add(page)
 
-            if break_before(paragraph) and page in occupied:
+            if _enabled(paragraph_property(paragraph, "pageBreakBefore")) and page in occupied:
                 advance()
             for node in _inline_nodes(paragraph):
                 if node.tag == W + "br" and node.get(W + "type") == "page":

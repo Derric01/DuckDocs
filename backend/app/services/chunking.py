@@ -167,8 +167,9 @@ def chunk_document(
                 )
                 candidates.extend(ChunkCandidate(
                     page.page_number, start, stop, text, None, "cell" if block.is_cell else "paragraph",
-                    parsed.fidelity_tier, paragraph_number=block.paragraph_number, location=block.location,
-                ) for start, stop, text in windows)
+                    parsed.fidelity_tier, paragraph_number=block.paragraph_number,
+                    location=(block.location if len(windows) == 1 else f"{block.location} / Part {index} of {len(windows)}"),
+                ) for index, (start, stop, text) in enumerate(windows, 1))
                 line = end + 2
         elif page.table_rows:
             candidates.extend(ChunkCandidate(page.page_number, row.row_number, row.row_number,

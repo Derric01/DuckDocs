@@ -46,6 +46,32 @@ model text. The UI normally resolves the evidence record and displays its page;
 if that lookup fails, it preserves the citation's page. A legacy citation without
 either location displays `Page unavailable` instead of inventing page 1.
 
+## Paragraph counting
+
+`The second paragraph after the page break` selects body paragraph 2 of the page
+beginning at the first boundary (page 2). Counts restart at one on every page.
+Each nonempty body `w:p` counts once, including a heading; its sentences and runs
+do not count separately. Blank/break-only paragraphs, headers, footers and table
+cells do not enter body counts. If a break splits a paragraph, its nonempty
+continuation counts as paragraph 1 on the destination page. An explicit page or
+numbered break selects a different destination with the same counting rule.
+
+An unnumbered request for `the paragraph` selects a unique non-heading body
+paragraph on that page. Word outline-level properties (including inherited styles)
+identify headings; text content does not. Explicit paragraph ordinals continue to
+count headings, and can quote a heading when its ordinal is requested. Multiple
+non-heading paragraphs require an ordinal rather than an arbitrary choice.
+
+Requests to read/quote a located paragraph return its exact stored text and page
+citation after a fresh evidence check. A missing or ambiguous location refuses;
+counting never spills into the next page. A paragraph split into multiple chunk
+windows is refused as a whole-paragraph quote rather than silently truncated;
+semantic questions can still retrieve its individual windows. Part labels retain
+that distinction even if an ingestion chunk limit omits later windows. Semantic
+questions about a numbered paragraph use the ordinary grounding gate, with the
+same paragraph filter. Other formats without stored paragraph ordinals refuse
+ordinal paragraph lookup; their physical-page queries remain supported.
+
 The existing label-value regression now supplies all parsed DOCX paragraphs to
 retrieval. Its old assumption that the entire document occupied `chunks[0]` no
 longer represented ingestion; the expected label value and exact quote are unchanged.

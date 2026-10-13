@@ -22,7 +22,7 @@ from app.providers.registry import ProviderRegistry
 from app.repositories import AnyRepository
 from app.services.vector_store import RetrievedChunk, VectorStore, relevance_bucket
 from app.services import structured
-from app.services.page_queries import parse_page_reference
+from app.services.page_queries import is_paragraph_read, parse_page_reference, parse_paragraph_number, without_paragraph_reference
 
 CITATION_RE = re.compile(r"\[chunk:([^\]]+)\]")
 logger = logging.getLogger("duckdocs.rag")
@@ -371,6 +371,9 @@ def _evidence_matches_query_hints(
         return False
     reference = parse_page_reference(query)
     if reference and not reference.matches(evidence.page, extension, (document_pages or {}).get(evidence.document_id)):
+        return False
+    paragraph = parse_paragraph_number(query)
+    if paragraph is not None and evidence.paragraph_number != paragraph:
         return False
     return True
 
@@ -843,7 +846,7 @@ class RagService:
             document_ids=candidate_document_ids,
             page_constraints=page_constraints,
         )
-        if page_constraints is not None and candidate_ids is not None:
+        if (page_constraints is not None or parse_paragraph_number(query) is not None) and candidate_ids is not None:
             vector_hits = [chunk for chunk in vector_hits if chunk.evidence.id in candidate_ids]
         keyword_hits = self.repository.search_evidence(query, max(self.settings.top_k, len(self.repository.evidence)))
         if candidate_ids is not None:
@@ -1004,6 +1007,9 @@ class RagService:
         reference = parse_page_reference(query)
         if reference and not reference.matches(evidence.page, extension, (document_pages if document_pages is not None else self._document_pages()).get(evidence.document_id)):
             return False
+        paragraph = parse_paragraph_number(query)
+        if paragraph is not None and evidence.paragraph_number != paragraph:
+            return False
         if ((re.search(r"\b(?:excel|xlsx)\b", lowered) and extension != "xlsx")
             or (re.search(r"\bcsv\b", lowered) and not re.search(r"[\w-]+\.csv\b", lowered) and extension != "csv")):
             return False
@@ -1144,7 +1150,7 @@ class RagService:
 
     def _structured_source_ready(self, evidence: Evidence) -> bool:
         document = self.repository.documents.get(evidence.document_id)
-        return not (evidence.table_row or evidence.key_value) or document is None or document.status == "ready"
+        return not (evidence.table_row or evidence.key_value or evidence.paragraph_number) or document is None or document.status == "ready"
 
     def _structured_candidates(self, query: str, scope: SearchScope | None) -> tuple[list[Evidence], bool]:
         all_units = [e for e in self.repository.all_evidence() if self._structured_source_ready(e)]
@@ -1238,7 +1244,57 @@ class RagService:
                                     citations=[], retrieved_chunk_count=len(units), refusal_reason=exc.code,
                                     refusal_detail=str(exc))
 
+    def _ask_paragraph(self, query: str, scope: SearchScope | None) -> GroundedResponse | None:
+        page = parse_page_reference(query)
+        paragraph = parse_paragraph_number(query)
+        if page is None and paragraph is None:
+            return None
+        effective = query
+        for document in self.repository.documents.values():
+            effective = re.sub(rf"(?<!\w){re.escape(document.name)}(?!\w)", "document", effective, flags=re.I)
+        if not is_paragraph_read(effective):
+            return None
+        units, _ = self._structured_candidates(without_paragraph_reference(query), scope)
+        response = dict(id=f"resp_{uuid4().hex[:12]}", kind="ask", query=query, created_at=utc_now(),
+                        provider={"kind": "chat", "name": "deterministic", "model": "paragraph_v1"},
+                        retrieved_chunk_count=len(units))
+
+        def refuse(code: str, detail: str) -> GroundedResponse:
+            return GroundedResponse(**response, outcome="insufficient_evidence", answer=None, grounded=False,
+                                    citations=[], refusal_reason=code, refusal_detail=detail)
+
+        if (page and page.invalid) or paragraph == 0:
+            return refuse("invalid_location", "Specify one valid page and paragraph number.")
+        selected = [e.model_copy(deep=True) for e in units if e.paragraph_number is not None
+                    and (paragraph is None or e.paragraph_number == paragraph)]
+        if paragraph is None:
+            selected = [e for e in selected if not e.section.startswith("Heading / ")]
+        if not selected:
+            return refuse("paragraph_not_found", "No indexed body paragraph has that location. Existing DOCX files may need re-ingestion.")
+        locations = {(e.document_id, e.page, e.paragraph_number) for e in selected}
+        if len(locations) != 1:
+            return refuse("ambiguous_paragraph", "Several paragraphs match. Specify the document, page and paragraph number.")
+        if len(selected) != 1 or selected[0].section not in {
+            f"Paragraph {selected[0].paragraph_number}", f"Heading / Paragraph {selected[0].paragraph_number}",
+        }:
+            return refuse("paragraph_too_long", "This paragraph spans multiple evidence windows. Ask a specific question about its content.")
+        chosen = selected[0]
+        if len(chosen.snippet) > 12000:
+            return refuse("paragraph_too_long", "This paragraph is too long to quote in one answer. Ask a specific question about its content.")
+        fresh = {e.id: e for e in self.repository.all_evidence()}.get(chosen.id)
+        if fresh is None or any(getattr(fresh, field) != getattr(chosen, field)
+                                for field in ("document_id", "page", "paragraph_number", "section", "snippet")):
+            return refuse("paragraph_evidence_mismatch", "The paragraph changed while it was being selected. Try again.")
+        citation = Citation(id=f"cit_{uuid4().hex[:10]}", ordinal=1, evidence_unit_id=fresh.id,
+                            snippet=fresh.snippet, page=fresh.page)
+        return GroundedResponse(**response, outcome="grounded", answer=fresh.snippet, grounded=True,
+                                citations=[citation], diagnostic={"page": fresh.page,
+                                "paragraph_number": fresh.paragraph_number, "verified": True})
+
     def ask(self, query: str, scope: SearchScope | None = None) -> GroundedResponse:
+        paragraph_answer = self._ask_paragraph(query, scope)
+        if paragraph_answer is not None:
+            return paragraph_answer
         table_answer = self._ask_table(query, scope)
         if table_answer is not None:
             return table_answer

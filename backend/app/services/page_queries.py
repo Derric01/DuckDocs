@@ -20,6 +20,7 @@ NUMBER = rf"(?:\d+(?:st|nd|rd|th)?|{_WORD_NUMBER}(?:[ -](?:and[ -])?{_WORD_NUMBE
 PAGINATED_FORMATS = {"docx", "pdf", "pptx", "tif", "tiff", "png", "jpg", "jpeg", "webp", "bmp"}
 _PAGE = rf"\b(?:(?P<before>{NUMBER}|last|final)\s+(?P<kind_before>page|slide)|(?P<kind_after>page|slide)\s+(?:(?:number|no\.?|#)\s*)?(?P<after>{NUMBER}|last|final))\b"
 _BREAK = rf"\bafter\s+(?:the\s+)?(?:(?P<number>{NUMBER})\s+)?page[ -]break\b"
+_PARAGRAPH = rf"\b(?:(?P<before>{NUMBER})\s+paragraph|paragraph\s+(?:(?:number|no\.?|#)\s*)?(?P<after>{NUMBER}))\b"
 
 
 def ordinal_number(value: str) -> int | None:
@@ -79,3 +80,27 @@ def parse_page_reference(query: str) -> PageReference | None:
 
 def without_page_reference(query: str) -> str:
     return re.sub(_PAGE, " ", re.sub(_BREAK, " ", query, flags=re.I), flags=re.I)
+
+
+def parse_paragraph_number(query: str) -> int | None:
+    numbers = {ordinal_number(m.group("before") or m.group("after")) for m in re.finditer(_PARAGRAPH, query, re.I)}
+    if not numbers:
+        return None
+    # Zero is an invalid/conflicting selector, so it cannot match stored ordinals.
+    if len(numbers) != 1:
+        return 0
+    return next(iter(numbers)) or 0
+
+
+def without_paragraph_reference(query: str) -> str:
+    return re.sub(_PARAGRAPH, "paragraph", query, flags=re.I)
+
+
+def is_paragraph_read(query: str) -> bool:
+    if not re.search(r"\bparagraph\b", query, re.I):
+        return False
+    residual = without_paragraph_reference(without_page_reference(query))
+    filler = set("what does do did is are the a an this that on in of from at after within to for and please "
+                 "paragraph say says read quote show give tell me written contain contains text content exact verbatim "
+                 "word docx pdf pptx document file presentation slide page".split())
+    return set(re.findall(r"[a-z0-9]+", residual.lower())) <= filler
