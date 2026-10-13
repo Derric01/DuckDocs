@@ -85,6 +85,23 @@ def _extract_question(prompt: str) -> str:
     return questions[-1] if questions else ""
 
 
+def _matching_label_passages(question: str, snippet: str) -> list[str]:
+    if not re.search(r"\b(?:what|which|value|tell|give|show|find)\b", question, flags=re.I):
+        return []
+    stop_words = {"what", "which", "is", "are", "the", "a", "an", "of", "in", "on", "for", "value", "values"}
+    query_terms = _content_terms(question, stop_words) - _DOCUMENT_DESCRIPTOR_TERMS
+    passages: list[str] = []
+    for part in re.split(r"(?<=[.!?])\s+|\n+", snippet):
+        for match in re.finditer(r'(?:^|(?<=[{,]))\s*("?[A-Za-z_][\w /.-]*?"?)\s*:\s*("(?:\\.|[^"\\])*"|[^\n,}]+)', part):
+            label_terms = _content_terms(match.group(1), stop_words) - _DOCUMENT_DESCRIPTOR_TERMS
+            if label_terms and all(
+                any(term == label or (len(term) >= 4 and term in label) for term in query_terms)
+                for label in label_terms
+            ):
+                passages.append(match.group(0).strip())
+    return passages
+
+
 def _most_relevant_sentence(
     question: str,
     pairs: list[tuple[str, str]],
@@ -139,6 +156,9 @@ def _most_relevant_sentence(
             )
             if part.strip()
         ]
+        label_passages = _matching_label_passages(question, snippet)
+        if label_passages:
+            sentences = label_passages
         for sentence_index, sentence in enumerate(sentences):
             sentence_terms = _content_terms(sentence, stop_words)
             if page_match and re.search(rf"\bpage\s+(?!{page_match.group(1)}\b)\d+\b", sentence, flags=re.I):

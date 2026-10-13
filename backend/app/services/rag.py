@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from app.core.config import Settings
 from app.domain.models import Citation, Evidence, GroundedResponse, SearchScope, utc_now
+from app.providers.extractive import _matching_label_passages
 from app.providers.registry import ProviderRegistry
 from app.repositories import AnyRepository
 from app.services.vector_store import RetrievedChunk, VectorStore, relevance_bucket
@@ -602,6 +603,13 @@ def select_evidence_passage(query: str, answer: str, snippet: str) -> str:
     query_terms -= _DOCUMENT_DESCRIPTOR_TERMS
     if not answer_terms:
         return ""
+
+    label_passages = [
+        passage for passage in _matching_label_passages(query, snippet)
+        if len(tokenize(passage) & answer_terms) >= max(1, len(answer_terms) - 1)
+    ]
+    if label_passages:
+        snippet = "\n".join(label_passages)
 
     # Split at sentence and phrase boundaries. PDF extraction can flatten
     # headings into sentences, so commas and dashes also define candidate spans.

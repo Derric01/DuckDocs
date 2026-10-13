@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import json
+import io
+import zipfile
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import pytest
 
@@ -12,6 +15,9 @@ from app.providers.keyword import KeywordEmbeddingAdapter
 from app.providers.ollama import OllamaChatAdapter
 from app.repositories.memory import DocumentRepository
 from app.services.rag import GroundingGate, RagService, _answer_type_missing, _generate_chat, _query_format_extensions
+from app.providers.extractive import _most_relevant_sentence
+from app.services.chunking import chunk_document
+from app.services.parsing import parse_docx
 from app.services.vector_store import RetrievedChunk, VectorStore
 
 
@@ -214,3 +220,48 @@ def test_amount_questions_accept_numeric_currency_evidence(source: str) -> None:
 
 def test_non_amount_currency_question_is_not_forced_to_have_a_number() -> None:
     assert not _answer_type_missing("Which currency is accepted?", ["1"], {"1": "The accepted currency is euros."})
+
+
+def _docx(paragraphs: list[str]) -> bytes:
+    buffer = io.BytesIO()
+    body = "".join(f"<w:p><w:r><w:t>{escape(text)}</w:t></w:r></w:p>" for text in paragraphs)
+    document = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' + body + "</w:body></w:document>"
+    with zipfile.ZipFile(buffer, "w") as package:
+        package.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')
+        package.writestr("_rels/.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
+        package.writestr("word/document.xml", document)
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize("question", [
+    "What's the audit reference value in the Word document?",
+    "Tell me the value of the audit reference in this document.",
+    "What is the audit reference?",
+])
+def test_docx_label_value_wins_over_heading_and_first_paragraph(tmp_path: Path, question: str) -> None:
+    payload = _docx([
+        "Audit reference report.", "Audit reference section.",
+        "This first paragraph explains the audit reference report and its purpose.",
+        "Audit reference: REF-CEDAR-572.",
+    ])
+    parsed = parse_docx(payload)
+    assert parsed is not None
+    chunks = chunk_document(parsed, Settings())
+    unit = _evidence("report", "audit.docx", chunks[0].text)
+    _, sentence = _most_relevant_sentence(question, [(unit.id, unit.snippet)])
+    assert sentence == "Audit reference: REF-CEDAR-572."
+    service = _service(tmp_path, [unit], _Chat('{"answer":"","evidence_ids":[]}'))
+    response = service.ask(question)
+    assert response.outcome == "grounded"
+    assert response.answer == "Audit reference: REF-CEDAR-572."
+    assert response.citations[0].snippet == "Audit reference: REF-CEDAR-572"
+    assert response.citations[0].snippet in unit.snippet
+
+
+def test_label_selection_does_not_choose_a_different_property() -> None:
+    _, sentence = _most_relevant_sentence(
+        "What is the audit reference?",
+        [("report", "Audit reference report. Audit owner: Morgan. Audit reference: REF-CEDAR-572.")],
+    )
+    assert "REF-CEDAR-572" in sentence
+    assert "Morgan" not in sentence
