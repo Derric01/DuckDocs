@@ -110,7 +110,7 @@ class _SynthesisChat(_Chat):
 
 
 def test_single_document_factual_lookup_returns_grounded_answer() -> None:
-    service = _service([_evidence("ev_priya", "09-data.csv", "Priya Nair, Engineering")])
+    service = _service([_evidence("ev_priya", "09-data.csv", "Priya Nair, department, Engineering")])
 
     response = service.ask("What is the department of Priya Nair?")
 
@@ -120,7 +120,13 @@ def test_single_document_factual_lookup_returns_grounded_answer() -> None:
 
 
 def test_low_top_passage_support_refuses_before_model_call() -> None:
-    service = _service([_evidence("ev_notes", "notes.md", "unrelated text")], min_support=0.1)
+    service = _service(
+        [
+            _evidence("ev_notes", "notes.md", "unrelated text"),
+            _evidence("ev_other", "other.md", "different content"),
+        ],
+        min_support=0.1,
+    )
     chunk = RetrievedChunk(
         evidence=service.repository.evidence["ev_notes"],
         score=1.0,

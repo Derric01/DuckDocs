@@ -422,8 +422,13 @@ def _attribute_missing(
 ) -> bool:
     if not query or not evidence_by_id or not term_document_frequency:
         return False
+    if not re.search(r"\bwhat is\b|\bwhich\b", query, flags=re.I):
+        return False
+    if re.search(r"\b(?:total|sum|average|across|between)\b", query, flags=re.I):
+        return False
     query_terms = _split_terms(query)
-    source_terms = _split_terms(" ".join(evidence_by_id.get(evidence_id, "") for evidence_id in cited_ids))
+    source_text = " ".join(evidence_by_id.get(evidence_id, "") for evidence_id in cited_ids)
+    source_terms = _split_terms(source_text)
     capitalized_terms = _split_terms(" ".join(re.findall(r"\b[A-Z][a-z0-9_.-]*\b", query)))
     rare_entity_terms = {
         term for term in query_terms
@@ -434,7 +439,15 @@ def _attribute_missing(
     if not rare_entity_terms or not attribute_terms:
         return False
     stemmed_source = {_stem(term) for term in source_terms}
-    return not any(_stem(term) in stemmed_source for term in attribute_terms)
+    if any(_stem(term) in stemmed_source for term in attribute_terms):
+        return False
+    compact_source = re.sub(r"[^a-z0-9]+", "", source_text.lower())
+    compact_attribute = "".join(
+        term
+        for term in re.findall(r"[a-z0-9]+", query.lower())
+        if term in attribute_terms
+    )
+    return not compact_attribute or compact_attribute not in compact_source
 
 
 def _stem(term: str) -> str:
@@ -1081,7 +1094,8 @@ class RagService:
                 refusal_reason="insufficient_evidence",
                 diagnostic={"top_score": 0.0, "threshold": self.settings.min_similarity},
             )
-        if chunks[0].lexical_coverage < self.settings.min_support:
+        term_document_frequency, document_count = self._idf_stats()
+        if document_count >= 2 and chunks[0].lexical_coverage < self.settings.min_support:
             _log_stage("total", total_started, outcome="insufficient_evidence", reason="low_support")
             return GroundedResponse(
                 id=response_id,
@@ -1142,7 +1156,6 @@ class RagService:
             str(index): chunk.evidence
             for index, chunk in enumerate(ask_chunks, start=1)
         }
-        term_document_frequency, _ = self._idf_stats()
         stage_started = perf_counter()
         gate = self.gate.validate(
             raw_text,
