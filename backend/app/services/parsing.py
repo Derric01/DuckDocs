@@ -339,7 +339,7 @@ def detect_file_type(payload: bytes, suffix: str) -> str:
     if stripped.startswith(("{", "[")) and suffix not in CODE_EXTENSIONS:
         try:
             json.loads(stripped)
-            return "json"
+            return suffix if suffix in {"yaml", "yml"} else "json"
         except ValueError:
             pass
     if suffix in {"pdf", "docx", "xlsx", "pptx"} | IMAGE_EXTENSIONS:
@@ -473,6 +473,9 @@ def parse_xlsx(payload: bytes) -> ParsedDocument | None:
                 value = cell.value
                 if isinstance(value, (int, float)) and "%" in cell.number_format:
                     cells.append(f"{Decimal(str(value)) * 100}%")
+                elif isinstance(value, (int, float)) and re.search(r"[$€£₹¥]", cell.number_format):
+                    symbol = re.search(r"[$€£₹¥]", cell.number_format)[0]
+                    cells.append(f"{symbol}{value}")
                 else:
                     cells.append("" if value is None else str(value).strip())
             rows.append(cells)

@@ -381,6 +381,11 @@ def _query_format_extensions(query: str, available: set[str]) -> set[str]:
         return {"xlsx"}
     if re.search(r"\bcsv\b", query):
         return {"csv"}
+    explicit_keys = set().union(*(extensions for phrase, extensions in {
+        "yaml": {"yaml", "yml"}, "yml": {"yaml", "yml"}, "json": {"json"}, "xml": {"xml"}
+    }.items() if re.search(rf"\b{phrase}\b", query)))
+    if explicit_keys:
+        return explicit_keys & available or explicit_keys
     groups = {
         "pdf": {"pdf"},
         "docx": {"docx", "doc"},
@@ -529,9 +534,9 @@ def _answer_adds_no_information(answer: str, query: str | None) -> bool:
 
 
 def _is_structured_document(evidence: Evidence | None) -> bool:
-    if evidence is None or "." not in evidence.document_name:
+    if evidence is None:
         return False
-    return (evidence.file_type or evidence.document_name.rsplit(".", 1)[-1].lower()) in {"xml", "yaml", "yml", "json", "csv"}
+    return (getattr(evidence, "file_type", None) or evidence.document_name.rsplit(".", 1)[-1].lower()) in {"xml", "yaml", "yml", "json", "csv"}
 
 
 def _looks_like_structured_answer(value: str) -> bool:
@@ -972,7 +977,7 @@ class RagService:
         candidates = {
             evidence.id
             for evidence in self.repository.evidence.values()
-            if document_ids is None or evidence.document_id in document_ids
+            if (document_ids is None or evidence.document_id in document_ids) and self._structured_source_ready(evidence)
         }
         hinted = {
             evidence.id
@@ -1123,8 +1128,12 @@ class RagService:
         self.vector_store.delete_document(document_id, keep_ids={unit.id for unit in units})
         return indexed_count
 
+    def _structured_source_ready(self, evidence: Evidence) -> bool:
+        document = self.repository.documents.get(evidence.document_id)
+        return not (evidence.table_row or evidence.key_value) or document is None or document.status == "ready"
+
     def _structured_candidates(self, query: str, scope: SearchScope | None) -> tuple[list[Evidence], bool]:
-        all_units = list(self.repository.all_evidence())
+        all_units = [e for e in self.repository.all_evidence() if self._structured_source_ready(e)]
         if scope and scope.type == "document":
             all_units = [e for e in all_units if e.document_id == scope.document_id]
         elif scope and scope.type == "selection":
@@ -1154,6 +1163,10 @@ class RagService:
         response = dict(id=f"resp_{uuid4().hex[:12]}", kind="ask", query=query,
                         created_at=utc_now(), provider={"kind": "chat", "name": "deterministic", "model": "structured_v1"})
         try:
+            if re.search(r"\b(?:spreadsheet|sheet)\b", query, re.I) and not re.search(r"\bcsv\b", query, re.I):
+                workbook_scores = {key: score for key, score in scores.items()
+                                   if tables[key][0].file_type == "xlsx" and score > 0}
+                scores = workbook_scores or scores
             best = max(scores.values())
             choices = [key for key, score in scores.items() if score == best]
             if re.search(r"\b(?:spreadsheet|sheet)\b", query, re.I) and not re.search(r"\bcsv\b", query, re.I):
@@ -1168,6 +1181,10 @@ class RagService:
             fresh = [e for e in self.repository.all_evidence() if (e.document_id, e.page) == key]
             structured.verify_execution(result, fresh)
             answer, citations = structured.answer_execution(query, result, units)
+            selected_values = (" ".join(row.table_row.cells[i] for row in result.rows for i in plan.columns)
+                               if plan.operation == "lookup" else structured.display_number(result.value))
+            if _answer_type_missing(query, ["selected_values"], {"selected_values": selected_values}):
+                raise structured.StructuredError("answer_type_missing", "The selected cells do not contain the requested number, amount or date.")
             return GroundedResponse(**response, outcome="grounded", answer=answer, grounded=True,
                 citations=citations, retrieved_chunk_count=len(units),
                 diagnostic={"structured_operation": plan.operation, "selected_rows": len(result.rows), "verified": True})
@@ -1187,6 +1204,9 @@ class RagService:
                         provider={"kind": "chat", "name": "deterministic", "model": "key_path_v1"})
         try:
             selected = structured.select_keys(query, units)
+            values = " ".join(e.key_value.value for e in selected)
+            if _answer_type_missing(query, ["selected_values"], {"selected_values": values}):
+                raise structured.StructuredError("answer_type_missing", "The selected key values do not contain the requested number, amount or date.")
             fresh = {e.id: e for e in self.repository.all_evidence()}
             for old in selected:
                 current = fresh.get(old.id)

@@ -32,14 +32,16 @@ def test_key_value_answers_are_exact_and_only_relevant(tmp_path, suffix, payload
 
 def test_xml_collection_excludes_attributes_and_other_elements(tmp_path):
     with client_with_data_root(tmp_path) as client:
-        doc = upload(client, "list.xml", b'<catalog revision="ignore"><item id="private">Sprocket</item><item>Cog</item><note>irrelevant</note></catalog>')
+        doc = upload(client, "list.xml", b'<catalog revision="ignore"><item id="private">Sprocket</item><item id="other-private">Cog</item><note>irrelevant</note></catalog>')
         result = ask(client, "What items are listed in the XML file?", doc)
         assert result["answer"] == "/catalog/item[1]: Sprocket\n/catalog/item[2]: Cog"
         assert len(result["citations"]) == 2
         assert "private" not in str(result)
         assert "irrelevant" not in str(result)
         attribute = ask(client, "What is the id at /catalog/item[1]/@id?", doc)
+        assert attribute["grounded"]
         assert "private" in attribute["answer"]
+        assert "other-private" not in attribute["answer"]
 
 
 def test_nested_json_paths_lists_and_ambiguous_leaf(tmp_path):
@@ -49,6 +51,18 @@ def test_nested_json_paths_lists_and_ambiguous_leaf(tmp_path):
         assert ask(client, "What is $.primary.token?", doc)["answer"] == '$.primary.token: "abc"'
         result = ask(client, "List the items", doc)
         assert result["answer"] == '$.items[0]: "oak"\n$.items[1]: "pine"'
+
+
+def test_explicit_config_format_is_not_broadened_by_config_word(tmp_path):
+    with client_with_data_root(tmp_path) as client:
+        upload(client, "alpha.json", b'{"token":"JSON-ONLY"}')
+        upload(client, "beta.yaml", b'token: YAML-ONLY')
+        upload(client, "gamma.xml", b'<root><token>XML-ONLY</token></root>')
+        for suffix in ("json", "yaml", "xml"):
+            result = ask(client, f"What is token in the {suffix} config file?")
+            assert result["grounded"]
+            assert f"{suffix.upper()}-ONLY" in result["answer"]
+            assert len(result["citations"]) == 1
 
 
 @pytest.mark.parametrize("suffix,payload", [

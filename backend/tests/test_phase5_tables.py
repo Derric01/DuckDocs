@@ -38,6 +38,19 @@ def test_workbook_rows_keep_sheet_and_physical_coordinates():
     assert chunks[3].table_row.data_row_count == 0
 
 
+def test_workbook_number_formats_and_uncached_formulas():
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.append(["Rate", "Amount", "Formula"])
+    sheet.append([0.125, 1234.5, "=1+2"])
+    sheet["A2"].number_format = "0.0%"
+    sheet["B2"].number_format = "$#,##0.00"
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    metadata = parse_xlsx(buffer.getvalue()).pages[0].table_rows[1]
+    assert metadata.cells == ["12.500%", "$1234.5", ""]
+
+
 @pytest.mark.parametrize("storage", ["memory", "sql"])
 def test_row_metadata_persists_after_repository_restart(tmp_path, storage):
     from app.domain.models import Document, utc_now
@@ -64,3 +77,13 @@ def test_row_metadata_persists_after_repository_restart(tmp_path, storage):
     assert row.table_row.cells == ["Nora", "123"]
     assert row.file_type == "csv"
     assert row.section == "Row 2"
+    # Re-ingestion reuses IDs: flush deleted SQL identities before inserting.
+    repo = factory()
+    replacement = chunk_document(parse_csv(b"Name,Amount\nPia,456\nOmar,789\n"), Settings())
+    assert repo.index_document_chunks(doc.id, replacement) == 3
+    persisted = list(factory().all_evidence())
+    assert len(persisted) == 3
+    assert {e.table_row.row_number for e in persisted} == {1, 2, 3}
+    assert all("Nora" not in e.snippet for e in persisted)
+    repo.index_document_chunks(doc.id, chunks)
+    assert len(list(factory().all_evidence())) == 2

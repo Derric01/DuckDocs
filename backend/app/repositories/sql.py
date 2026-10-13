@@ -161,6 +161,9 @@ class SqlDocumentRepository:
             existing = session.scalars(select(EvidenceRow).where(EvidenceRow.document_id == document_id)).all()
             for row in existing:
                 session.delete(row)
+            # autoflush is disabled: clear deleted identities before reusing
+            # deterministic evidence IDs, or merge/update is later deleted.
+            session.flush()
             new_ids: set[str] = set()
             for index, chunk in enumerate(chunks, start=1):
                 evidence_id = f"ev_{document_id.removeprefix('doc_')}_{index:04d}"
@@ -185,7 +188,7 @@ class SqlDocumentRepository:
                     table_row=chunk.table_row,
                     key_value=chunk.key_value,
                 )
-                session.merge(self._from_evidence(evidence))
+                session.add(self._from_evidence(evidence))
                 self.evidence[evidence_id] = evidence
             session.commit()
         for evidence_id in [

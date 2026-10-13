@@ -81,6 +81,53 @@ result, while retaining both measurements because the 1B model can vary.
 **Aggregate:** 2 PASS, 3 PARTIAL, 8 FAIL; 0 passing answers with a
 wrong/missing citation.
 
+## Phase 5 — structured data and content detection (13 October 2026)
+
+Baseline: `scorecard_phase3b-terminal1-verify.json`, verified Phase 3B HEAD
+`1547993` (8 PASS / 3 PARTIAL / 2 FAIL). Recovery measurement after all code changes:
+
+```text
+Q   Baseline  Phase 5
+1   PASS      PASS
+2   PASS      PASS
+3   PASS      PASS
+4   PASS      PASS
+5   PASS      PASS
+6   FAIL      FAIL
+7   PASS      PASS
+8   FAIL      PASS
+9   PARTIAL   PASS
+10  PARTIAL   PASS
+11  PARTIAL   PASS
+12  PASS      PASS
+13  PASS      PASS
+Regressions versus baseline: none
+PASS 12 / PARTIAL 0 / FAIL 1; passing wrong/missing citations: 0
+Container pytest: 263 passed (7 existing dependency/config warnings)
+```
+
+The first Phase 5 scorecard regressed Q9/Q10/Q11. Verification stopped and the
+failures were reported. SQL re-ingestion reused deleted identities, removing
+headers/first paths at commit; deleted rows now flush before replacement inserts.
+The generic word "config" also broadened explicit YAML to JSON/XML; explicit
+format hints now stay strict. Synthetic re-ingestion and mixed-format tests cover
+both fixes. Independent completeness checks were retained.
+
+Migrations 0004/0005 applied to the real PostgreSQL repository. Five affected
+documents were retried after a local pre-change evidence/vector backup; every
+original upload SHA-256 hash stayed unchanged. The library has 15 documents,
+53 evidence units and the same 53 vector IDs, including three complete tables
+and three complete key-path documents. MIN_SUPPORT remains 0.1.
+
+An additional synthetic compatibility check caught structured lookups bypassing
+the existing numeric answer-type guard. CSV/JSON/YAML/XML now verify selected
+values (excluding row/path numbers); all four refusal/valid-currency tests pass.
+
+Final committed-HEAD verification, all commands, per-question provider/chunks/
+seconds/answer starts, baseline comparison and changed files are recorded in
+`output/phase5/Phase5_Report.txt` (workspace root). Q6's pre-existing DOCX/page
+limitation remains. Phase 6 was not started; no held-out files were accessed.
+
 ### Phase 3 final
 
 The support gate uses `DUCKDOCS_MIN_SUPPORT=0.1`. It is applied when the

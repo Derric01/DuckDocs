@@ -25,6 +25,8 @@ def table(payload=b'Person,Team,Amount,Rate\nNora,Blue,"$1,250.50",10%\nOmar,Red
     ("Sum Amount where Team equals Blue and Amount > $500", "1250.50"),
     ("Sum Amount where Team equals 'Blue'", "1350.75"),
     ("Average Rate", "20"),
+    ("Count rows where Amount equals 100.25", "1"),
+    ("Sum Amount where Team equals Blue in numbers.csv", "1350.75"),
 ])
 def test_plans_and_operations(question, value):
     units = table()
@@ -53,6 +55,8 @@ def test_empty_count_and_unmapped_column():
         plan_question("Total bonuses", units)
     with pytest.raises(StructuredError, match="entity"):
         plan_question("Amount for Zed", units)
+    with pytest.raises(StructuredError, match="filter"):
+        plan_question("Sum Amount where Team equals Blue and Missing > 3", units)
 
 
 def test_incomplete_table_and_mixed_units_refuse():

@@ -33,7 +33,7 @@ def test_total_is_verified_and_cites_only_exact_input_cells(tmp_path):
         assert result["provider"]["name"] == "deterministic"
         assert result["diagnostic"]["verified"] is True
         assert [c["row_number"] for c in result["citations"]] == [2, 3]
-        assert [c["snippet"] for c in result["citations"]] == ["Receipts: 1,100", "Receipts: 300"]
+        assert [c["snippet"] for c in result["citations"]] == ["Period: Apr | Receipts: 1,100", "Period: May | Receipts: 300"]
         assert "Secret" not in str(result)
 
 
@@ -44,6 +44,7 @@ def test_lookup_only_returns_requested_cells_and_unknown_column_refuses(tmp_path
         assert result["answer"] == "Units: 23"
         assert len(result["citations"]) == 1
         assert result["citations"][0]["row_number"] == 3
+        assert result["citations"][0]["snippet"] == "Product: Nut | Units: 23"
         result = ask(client, "What is the warranty period in parts.csv?", doc)
         assert not result["grounded"]
         assert result["refusal_reason"] == "column_unmapped"
@@ -89,3 +90,22 @@ def test_ambiguous_tables_and_invalid_numeric_cells_refuse(tmp_path):
         assert ask(client, "Sum Amount")["refusal_reason"] == "ambiguous_table"
         doc = upload(client, "bad.csv", b"Person,Amount\nZed,missing\n")
         assert ask(client, "Sum Amount", doc)["refusal_reason"] == "invalid_numeric_cell"
+
+
+@pytest.mark.parametrize("suffix,payload", [
+    ("csv", b"Product,Price\nCog,unavailable\n"),
+    ("json", b'{"price":"unavailable"}'),
+    ("yaml", b'price: unavailable'),
+    ("xml", b'<root><price>unavailable</price></root>'),
+])
+def test_structured_lookup_preserves_numeric_answer_type_gate(tmp_path, suffix, payload):
+    with client_with_data_root(tmp_path) as client:
+        doc = upload(client, f"costs.{suffix}", payload)
+        result = ask(client, f"What is the price in USD in costs.{suffix}?", doc)
+        assert not result["grounded"]
+        assert result["refusal_reason"] == "answer_type_missing"
+        assert result["citations"] == []
+        available = upload(client, f"available.{suffix}", payload.replace(b"unavailable", b"USD 17.50"))
+        result = ask(client, "What is the price in USD?", available)
+        assert result["grounded"]
+        assert "17.50" in result["answer"]

@@ -85,3 +85,4 @@ def test_retry_detects_content_again_and_reports_bad_stored_content(tmp_path):
         job = next(job for job in client.get("/api/v1/ingest-jobs").json() if job["id"] == result.json()["id"])
         assert job["error"]["reason_code"] == "unsupported_file_content"
         assert "binary" in job["error"]["human_message"]
+        assert not ask(client, "Sum Units", doc)["grounded"]

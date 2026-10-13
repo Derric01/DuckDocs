@@ -121,6 +121,7 @@ _OPERATORS = {
 
 def plan_question(query: str, units: list[Evidence]) -> Plan:
     headers, rows = table_complete(units)
+    query = re.sub(r"\s+in\s+(?:the\s+)?(?:[\w.-]+\.(?:csv|xlsx)|csv|excel|spreadsheet|table)\s*[?.]?$", "", query, flags=re.I)
     lowered = query.casefold()
     operation: Operation = "lookup"
     for pattern, op in [(r"\b(?:average|mean)\b", "average"), (r"\b(?:minimum|min|lowest|smallest)\b", "min"),
@@ -139,6 +140,7 @@ def plan_question(query: str, units: list[Evidence]) -> Plan:
            for i in columns):
         raise StructuredError("ambiguous_column", "The requested column has a blank or duplicate header.")
     filters: list[Filter] = []
+    matched_spans: list[tuple[int, int]] = []
     explicit_columns: set[int] = set()
     for i, header in enumerate(headers):
         if not header.strip():
@@ -149,6 +151,15 @@ def plan_question(query: str, units: list[Evidence]) -> Plan:
             value = match[2].strip().strip("\"'").rstrip(".")
             filters.append(Filter(i, _OPERATORS[match[1].lower()], (value,)))
             explicit_columns.add(i)
+            matched_spans.append(match.span())
+    where = re.search(r"\bwhere\b", query, re.I)
+    if where:
+        remainder = list(query)
+        for start, end in matched_spans:
+            remainder[start:end] = " " * (end - start)
+        unexplained = re.sub(r"\band\b|[?;.\s]", "", "".join(remainder)[where.end():], flags=re.I)
+        if unexplained:
+            raise StructuredError("filter_unmapped", "Part of the filter cannot be mapped to a table column.")
     if re.search(r"\bwhere\b|[<>!=]", query) and not filters:
         raise StructuredError("filter_unmapped", "I cannot map the filter to a column and comparison value.")
     months = {calendar.month_abbr[i].lower(): calendar.month_name[i].lower() for i in range(1, 13)}
@@ -176,7 +187,10 @@ def matches(row: Evidence, filters: tuple[Filter, ...]) -> bool:
         if constraint.comparator in {"eq", "ne"}:
             equal = any(normalized(cell) == normalized(value) for value in constraint.values)
             try:
-                equal = equal or any(number(cell) == number(value) for value in constraint.values)
+                left = number(cell)
+                equal = equal or any(left.value == number(value).value
+                                     and (not number(value).unit or left.unit == number(value).unit)
+                                     for value in constraint.values)
             except StructuredError:
                 pass
             if equal != (constraint.comparator == "eq"):
@@ -273,6 +287,25 @@ def answer_execution(query: str, result: Execution, table_units: list[Evidence])
     from app.domain.models import Citation
     citations: list[Citation] = []
     lines: list[str] = []
+
+    def cite_cells(row: Evidence, columns: list[int]) -> None:
+        metadata = row.table_row
+        # Contiguous relevant cells form one exact source substring; gaps form
+        # separate citations so unrelated columns are never included.
+        groups: list[list[int]] = []
+        for index in sorted(set(columns)):
+            if groups and groups[-1][-1] + 1 == index:
+                groups[-1].append(index)
+            else:
+                groups.append([index])
+        for group in groups:
+            quote = " | ".join(f"{metadata.headers[i]}: {metadata.cells[i]}" for i in group)
+            if quote not in row.snippet:
+                raise StructuredError("cell_evidence_mismatch", "A cited cell is absent from its stored row.")
+            citations.append(Citation(id=f"cit_{uuid4().hex[:10]}", ordinal=len(citations) + 1,
+                evidence_unit_id=row.id, snippet=quote, sheet_name=metadata.sheet_name,
+                row_number=metadata.row_number, column=", ".join(metadata.headers[i] for i in group)))
+
     if result.plan.operation == "lookup":
         for row in result.rows:
             metadata = row.table_row
@@ -281,22 +314,13 @@ def answer_execution(query: str, result: Execution, table_units: list[Evidence])
                 columns = sorted(set(columns) | {i for i, h in enumerate(metadata.headers)
                                                 if normalized(h) in {"name", "person", "employee", "full name"}})
             lines.append("; ".join(f"{metadata.headers[i]}: {metadata.cells[i]}" for i in columns))
-            for i in columns:
-                quote = f"{metadata.headers[i]}: {metadata.cells[i]}"
-                if quote not in row.snippet:
-                    raise StructuredError("cell_evidence_mismatch", "A cited cell is absent from its stored row.")
-                citations.append(Citation(id=f"cit_{uuid4().hex[:10]}", ordinal=len(citations) + 1,
-                    evidence_unit_id=row.id, snippet=quote, sheet_name=metadata.sheet_name,
-                    row_number=metadata.row_number, column=metadata.headers[i]))
+            cite_cells(row, columns + [f.column for f in result.plan.filters])
         return "\n".join(lines), citations
     for row in result.rows or tuple(u for u in table_units if u.table_row.is_header):
         metadata = row.table_row
         index = result.plan.columns[0] if result.plan.operation != "count" else (
             result.plan.filters[0].column if result.plan.filters else 0)
-        quote = f"{metadata.headers[index]}: {metadata.cells[index]}"
-        citations.append(Citation(id=f"cit_{uuid4().hex[:10]}", ordinal=len(citations) + 1,
-            evidence_unit_id=row.id, snippet=quote, sheet_name=metadata.sheet_name,
-            row_number=metadata.row_number, column=metadata.headers[index]))
+        cite_cells(row, [index] + [f.column for f in result.plan.filters])
     output = display_number(result.value)
     if result.plan.operation == "count":
         inputs = " + ".join("1" for _ in result.rows) or "0 matching rows"
@@ -325,8 +349,8 @@ def select_keys(query: str, units: list[Evidence]) -> list[Evidence]:
         key_terms = set(normalized(" ".join(key.keys)).split())
         overlap = terms & key_terms
         if overlap and (key.value_type != "attribute" or any(normalized(k).lstrip("@") in terms for k in key.keys[-1:])):
-            exact = int(key.path in query or mentioned(key.keys[-1] if key.keys else "", query))
-            scores[unit.id] = len(overlap) + exact
+            leaf = int(mentioned(key.keys[-1] if key.keys else "", query))
+            scores[unit.id] = (key.path in query, len(overlap) + leaf)
     if not scores:
         raise StructuredError("key_unmapped", "I cannot map the question to a stored key or element path. Name the key or path explicitly.")
     best = max(scores.values())
