@@ -71,9 +71,10 @@ def _sheet_pattern(title: str) -> str:
 
 
 def table_query(query: str, unit: Evidence) -> str:
-    query = re.sub(rf"(?<!\w){re.escape(unit.document_name)}(?!\w)", " ", query, flags=re.I)
+    query = re.sub(rf"(?:\b(?:in|on|from)\s+(?:the\s+)?)?(?<!\w){re.escape(unit.document_name)}(?!\w)", " ", query, flags=re.I)
     title = unit.table_row.sheet_name
     if title:
+        query = re.sub(rf"\b(?:in|on|from)\s+(?:the\s+)?{_sheet_pattern(title)}", " ", query, flags=re.I)
         query = re.sub(_sheet_pattern(title), " ", query, flags=re.I)
         query = re.sub(rf"\b(?:in|on|from)\s+(?:the\s+)?{re.escape(title)}(?!\w)", " ", query, flags=re.I)
     return query
@@ -206,22 +207,107 @@ def table_complete(units: list[Evidence]) -> tuple[list[str], list[Evidence]]:
 _OPERATORS = {
     ">=": "ge", "<=": "le", "!=": "ne", "==": "eq", "=": "eq", ">": "gt", "<": "lt",
     "at least": "ge", "at most": "le", "greater than": "gt", "more than": "gt", "above": "gt",
-    "less than": "lt", "below": "lt", "not equal to": "ne", "equal to": "eq", "equals": "eq", "is": "eq",
+    "less than": "lt", "below": "lt", "over": "gt", "under": "lt", "not equal to": "ne", "equal to": "eq", "equals": "eq", "is": "eq",
 }
+
+_ROW_COUNT = r"\bcount\b|\b(?:how many|number of)\s+(?:rows|records|entries|employees|people|items|staff|workers|persons|products)\b"
+_MONTHS = {name.casefold(): i for i in range(1, 13) for name in (calendar.month_name[i], calendar.month_abbr[i])}
+_MONTH_PATTERN = "(?:" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + ")"
+
+
+def cell_mentioned(value: str, query: str) -> bool:
+    """Cell identities are literal; stemming must not conflate Sale with Sales."""
+    return bool(value.strip() and re.search(rf"(?<!\w){re.escape(value.strip())}(?!\w)", query, re.I))
+
+
+def requested_operation(query: str, headers: list[str], rows: list[Evidence]) -> Operation:
+    target = re.split(r"\b(?:where|with|whose|for)\b", query, maxsplit=1, flags=re.I)[0]
+    target = re.sub(r'"[^\"]*"|\'[^\']*\'', " ", target)
+    for header in sorted(headers, key=len, reverse=True):
+        if header:
+            target = re.sub(rf"(?<!\w){re.escape(header)}(?!\w)", " ", target, flags=re.I)
+    for value in {cell for row in rows for cell in row.table_row.cells if re.search(r"[A-Za-z]", cell)}:
+        target = re.sub(rf"(\b(?:of|does|did)\s+){re.escape(value)}(?!\w)|(?<!\w){re.escape(value)}(?=['’]s\b)", " ", target, flags=re.I)
+    target = re.sub(r"\b(?:at most|at least|greater than|less than|more than)\b.*$", " ", target, flags=re.I)
+    operations = {op for pattern, op in [
+        (r"\b(?:average|mean|avg)\b", "average"), (r"\b(?:minimum|min|lowest|smallest|fewest)\b", "min"),
+        (r"\b(?:maximum|max|highest|largest|most)\b", "max"), (r"\b(?:sum|total)\b", "sum"),
+        (_ROW_COUNT, "count")] if re.search(pattern, target, re.I)}
+    if "count" in operations and "sum" in operations and not re.search(r"\bsum\b", target, re.I):
+        operations.remove("sum")  # "total number of rows" still counts rows.
+    if len(operations) > 1:
+        raise StructuredError("ambiguous_operation", "This asks for several operations. Ask for one calculation at a time.")
+    operation = next(iter(operations), "lookup")
+    if operation == "lookup" and re.search(r"\bhow many\s+(?:units|quantity|qty)\b", query, re.I) and re.search(
+        r"\b(?:across|combined|altogether|through|between)\b", query, re.I):
+        operation = "sum"
+    if operation != "lookup" and re.search(r"\b(?:for each|group(?:ed)? by|per (?:team|department|category|product))\b", query, re.I):
+        raise StructuredError("unsupported_operation", "Grouped calculations are not supported. Filter one group and name the operation.")
+    return operation
+
+
+def _month_columns(rows: list[Evidence], headers: list[str] | None = None) -> set[int]:
+    headers = headers if headers is not None else (rows[0].table_row.headers if rows else [])
+    return {i for i, header in enumerate(headers)
+            if any(mentioned(label, header) for label in ("month", "period", "date"))
+            and all(row.table_row.cells[i].strip().casefold() in _MONTHS for row in rows)}
+
+
+def _month_filters(query: str, headers: list[str], rows: list[Evidence]):
+    pattern = rf"\b(?:between\s+({_MONTH_PATTERN})\s+and\s+({_MONTH_PATTERN})|(?:from\s+)?({_MONTH_PATTERN})\s*(?:through|to|until|[-–])\s*({_MONTH_PATTERN}))\b"
+    ranges = list(re.finditer(pattern, query, re.I))
+    points = {int(_MONTHS[m[0].casefold()]) for m in re.finditer(rf"\b{_MONTH_PATTERN}\b", query, re.I)}
+    candidates = _month_columns(rows, headers)
+    if not candidates:
+        if ranges:
+            raise StructuredError("filter_unmapped", "The month range cannot be mapped to a stored month column.")
+        return [], [], set()
+    if not points:
+        return [], [], set()
+    explicit = {i for i in candidates if mentioned(headers[i], query)}
+    candidates = explicit or candidates
+    if len(candidates) != 1:
+        raise StructuredError("ambiguous_filter", "Several columns contain months. Name the month column to filter.")
+    index = next(iter(candidates))
+    selected = set(points)
+    spans = []
+    for match in ranges:
+        start, end = (_MONTHS[(match[1] or match[3]).casefold()], _MONTHS[(match[2] or match[4]).casefold()])
+        current = start
+        while True:
+            selected.add(current)
+            if current == end:
+                break
+            current = current % 12 + 1
+        prefix = query[:match.start()]
+        header = re.search(rf"(?<!\w){re.escape(headers[index])}\s*$", prefix, re.I)
+        spans.append((header.start() if header else match.start(), match.end()))
+    values = tuple(dict.fromkeys(row.table_row.cells[index] for row in rows
+                               if _MONTHS[row.table_row.cells[index].strip().casefold()] in selected))
+    return [Filter(index, "eq", values or tuple(calendar.month_name[i] for i in sorted(selected)))], spans, {index}
+
+
+def _filter_prefixes(headers: list[str]) -> dict[str, set[int]]:
+    prefixes = {header: {i} for i, header in enumerate(headers) if header}
+    for labels, words in _COLUMN_VOCABULARY:
+        columns = {i for i, header in enumerate(headers) if any(mentioned(label, header) for label in labels)}
+        for word in words:
+            if columns:
+                prefixes.setdefault(word, set()).update(columns)
+                plural = word[:-1] + "ies" if word.endswith("y") else word + "s"
+                prefixes.setdefault(plural, set()).update(columns)
+                if word == "earn":
+                    for form in ("earned", "earning", "earnings"):
+                        prefixes.setdefault(form, set()).update(columns)
+    return prefixes
 
 
 def plan_question(query: str, units: list[Evidence]) -> Plan:
     headers, rows = table_complete(units)
     query = re.sub(r"\s+in\s+(?:the\s+)?(?:[\w.-]+\.(?:csv|xlsx)|csv|excel|spreadsheet|table)\s*[?.]?$", "", query, flags=re.I)
-    lowered = query.casefold()
-    operation: Operation = "lookup"
-    for pattern, op in [(r"\b(?:average|mean)\b", "average"), (r"\b(?:minimum|min|lowest|smallest)\b", "min"),
-                        (r"\b(?:maximum|max|highest|largest)\b", "max"), (r"\b(?:sum|total)\b", "sum"),
-                        (r"\bcount\b|\b(?:how many|number of)\s+(?:rows|records|entries|employees|people|items|staff|workers|persons|products)\b", "count")]:
-        if re.search(pattern, lowered):
-            operation = op
-            break
-    target_question = re.split(r"\bwhere\b", query, maxsplit=1, flags=re.I)[0]
+    query = re.sub(r"^\s*may\s+(?:you|i)\b", "", query, flags=re.I)
+    operation = requested_operation(query, headers, rows)
+    target_question = re.split(r"\b(?:where|with|whose|for)\b", query, maxsplit=1, flags=re.I)[0]
     columns = mapped_columns(headers, target_question)
     if operation not in {"count", "lookup"} and len(columns) != 1:
         raise StructuredError("column_unmapped", "I cannot map this calculation to one table column. Name the column explicitly.")
@@ -230,17 +316,24 @@ def plan_question(query: str, units: list[Evidence]) -> Plan:
     if any(not normalized(headers[i]) or sum(normalized(h) == normalized(headers[i]) for h in headers) != 1
            for i in columns):
         raise StructuredError("ambiguous_column", "The requested column has a blank or duplicate header.")
-    filters: list[Filter] = []
-    matched_spans: list[tuple[int, int]] = []
-    explicit_columns: set[int] = set()
-    for i, header in enumerate(headers):
-        if not header.strip():
-            continue
-        operators = "|".join(re.escape(op) for op in _OPERATORS)
-        pattern = rf"(?<!\w){re.escape(header)}\s*({operators})\s*(\"[^\"]+\"|'[^']+'|[^?;]+?)(?=\s+and\s+|\s+in (?:the )?(?:csv|excel|spreadsheet)|[?;]|$)"
+    filters, matched_spans, explicit_columns = _month_filters(query, headers, rows)
+    unquoted = re.sub(r'"[^\"]*"|\'[^\']*\'', " ", query)
+    if re.search(r"\b(?:where|with|whose)\b.*\bor\b", unquoted, re.I):
+        raise StructuredError("unsupported_filter", "OR comparison clauses are unsupported. Use one filter or a list of values on one column.")
+    for prefix, candidates in sorted(_filter_prefixes(headers).items(), key=lambda item: len(item[0]), reverse=True):
+        operators = "|".join(re.escape(op) for op in sorted(_OPERATORS, key=len, reverse=True))
+        pattern = rf"(?<!\w){re.escape(prefix)}(?!\w)\s*({operators})\s*(\"[^\"]+\"|'[^']+'|[^?;]+?)(?=\s+and\s+|\s+in (?:the )?(?:csv|excel|spreadsheet)|[?;]|$)"
         for match in re.finditer(pattern, query, re.I):
+            if any(match.start() < end and match.end() > start for start, end in matched_spans):
+                continue
+            if len(candidates) != 1:
+                raise StructuredError("ambiguous_column", "A comparison word matches several columns. Name the exact header.")
+            i = next(iter(candidates))
             value = match[2].strip().strip("\"'").rstrip(".")
-            filters.append(Filter(i, _OPERATORS[match[1].lower()], (value,)))
+            comparator = _OPERATORS[match[1].lower()]
+            if comparator not in {"eq", "ne"}:
+                number(value)
+            filters.append(Filter(i, comparator, (value,)))
             explicit_columns.add(i)
             matched_spans.append(match.span())
     where = re.search(r"\bwhere\b", query, re.I)
@@ -253,21 +346,33 @@ def plan_question(query: str, units: list[Evidence]) -> Plan:
             raise StructuredError("filter_unmapped", "Part of the filter cannot be mapped to a table column.")
     if re.search(r"\bwhere\b|[<>!=]", query) and not filters:
         raise StructuredError("filter_unmapped", "I cannot map the filter to a column and comparison value.")
-    months = {calendar.month_abbr[i].lower(): calendar.month_name[i].lower() for i in range(1, 13)}
+    if re.search(r"\b(?:above|below|over|under|at least|at most|greater than|less than|more than)\b", unquoted, re.I) and not any(f.comparator not in {"eq", "ne"} for f in filters):
+        raise StructuredError("filter_unmapped", "The comparison cannot be bound to a column and numeric value.")
+    implicit_query = list(query)
+    for start, end in matched_spans:
+        implicit_query[start:end] = " " * (end - start)
+    implicit_query = "".join(implicit_query)
     for i in range(len(headers)):
         if i in explicit_columns:
             continue
         values = tuple(dict.fromkeys(row.table_row.cells[i] for row in rows
-                       if row.table_row.cells[i] and (
-                           mentioned(row.table_row.cells[i], query)
-                           or (row.table_row.cells[i].lower() in months
-                               and mentioned(months[row.table_row.cells[i].lower()], query)))))
+                       if row.table_row.cells[i] and cell_mentioned(row.table_row.cells[i], implicit_query)))
         # Implicit filters require text entities, never a stray numeric digit.
         values = tuple(v for v in values if re.search(r"[A-Za-z]", v))
         if values:
             filters.append(Filter(i, "eq", values))
-    entity = re.search(r"\b(?:for|of)\s+(.+?)(?=\s+in\b|[?]|$)", query, re.I)
-    if entity and not filters and not any(mentioned(h, entity[1]) for h in headers):
+    for entity in re.finditer(r"\b(?:for|of|in)\s+(.+?)(?=\s+(?:are|is|in|where|with|whose|on|from)\b|[?]|$)", query, re.I):
+        text = entity[1].strip().rstrip(".")
+        field_reference = normalized(text).removeprefix("the ")
+        field_names = {normalized(h) for h in headers}
+        field_names.update(normalized(word) for labels, words in _COLUMN_VOCABULARY for word in words
+                           if any(mentioned(label, h) for label in labels for h in headers))
+        if (field_reference in field_names
+            or (operation == "count" and re.fullmatch(r"rows?|records?|entries|employees?|people|items?|staff|workers?|persons?|products?", text, re.I))
+            or re.fullmatch(r"(?:USD|EUR|GBP|INR|JPY|CAD|AUD|dollars?|euros?|rupees?|currency)", text, re.I)
+            or any(cell_mentioned(cell, text) for row in rows for cell in row.table_row.cells if re.search(r"[A-Za-z]", cell))
+            or (explicit_columns & _month_columns(rows) and re.search(rf"\b{_MONTH_PATTERN}\b", text, re.I))):
+            continue
         raise StructuredError("filter_unmapped", "I cannot find the requested entity in the table cells.")
     return Plan(operation, columns, tuple(filters))
 
@@ -276,7 +381,7 @@ def matches(row: Evidence, filters: tuple[Filter, ...]) -> bool:
     for constraint in filters:
         cell = row.table_row.cells[constraint.column]
         if constraint.comparator in {"eq", "ne"}:
-            equal = any(normalized(cell) == normalized(value) for value in constraint.values)
+            equal = any(cell.strip().casefold() == value.strip().casefold() for value in constraint.values)
             try:
                 left = number(cell)
                 equal = equal or any(left.value == number(value).value
@@ -363,6 +468,11 @@ def verify_execution(result: Execution, fresh_units: list[Evidence]) -> None:
         verified = Number(value, next((cell.unit for cell in cells if cell.unit), ""))
     if result.value != verified:
         raise StructuredError("calculation_verification_failed", "The independently recomputed result disagrees.")
+
+
+def verify_question_plan(query: str, plan: Plan, result: Execution, fresh_units: list[Evidence]) -> None:
+    if result.plan != plan or plan_question(query, fresh_units) != plan:
+        raise StructuredError("plan_verification_failed", "The executed operation or filters do not match the question's bound plan.")
 
 
 def display_number(value: Number) -> str:

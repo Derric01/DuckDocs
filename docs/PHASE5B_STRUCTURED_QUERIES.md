@@ -23,6 +23,26 @@ the existing optional diagnostic field. Five new synthetic workbook cases cover
 sheet order, duplicate text, named-sheet quantities and preserved ambiguity;
 the combined focused check passed 84 container tests.
 
+Planning distinguishes a month list (OR over the listed months) from an inclusive
+range, including ranges crossing December/January. Calendar filters bind only
+month/period/date headers with compatible cells, not people whose names happen
+to be months. Operation selection excludes entity names, column labels and filter
+clauses; ambiguous multiple operations, unsupported grouping/OR comparisons and
+unbound entities are refused. Comparison aliases bind a unique existing column.
+
+Before arithmetic verification, the application checks that the executor retained
+the original question plan and that the same plan binds against fresh stored
+cells. Independent numeric recomputation and exact citation checks still follow.
+Diagnostics expose operation, column, filters, candidate outcomes and plan_verified.
+Eighteen new plan cases cover ranges/lists, averages, inflected comparisons,
+literal cell identities, missing filters and a deliberately altered executor
+plan whose arithmetic is otherwise correct. The combined focused check passed
+102 container tests. The original failures were reproduced before fixing them.
+
+These are verified failure classes, not claims that any unseen private question
+has passed. The operator must rerun the private check independently before
+accepting Phase 5b or proceeding to Phase 6.
+
 These changes affect query planning only. No database or stored chunk metadata is
 changed, so no migration or re-ingestion is required. Default models, privacy
 settings, MIN_SUPPORT and existing grounding/completeness checks are retained.

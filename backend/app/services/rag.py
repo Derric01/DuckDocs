@@ -1155,7 +1155,10 @@ class RagService:
                         or (scope and scope.type == "document"))
         def supported(units: list[Evidence]) -> bool:
             try:
-                return bool(structured.mapped_columns(units[0].table_row.headers, structured.table_query(query, units[0])))
+                effective = structured.table_query(query, units[0])
+                return (bool(structured.mapped_columns(units[0].table_row.headers, effective))
+                        or structured.requested_operation(effective, units[0].table_row.headers,
+                                                          [u for u in units if not u.table_row.is_header]) == "count")
             except structured.StructuredError as error:
                 return error.code == "ambiguous_column"
         if not tables or (not explicit and not any(supported(units) for units in tables.values())):
@@ -1168,6 +1171,7 @@ class RagService:
             units = tables[key]
             result = structured.execute(plan, units)
             fresh = [e for e in self.repository.all_evidence() if (e.document_id, e.page) == key]
+            structured.verify_question_plan(effective_query, plan, result, fresh)
             structured.verify_execution(result, fresh)
             answer, citations = structured.answer_execution(query, result, units)
             selected_values = (" ".join(row.table_row.cells[i] for row in result.rows for i in plan.columns)
@@ -1177,7 +1181,7 @@ class RagService:
             return GroundedResponse(**response, outcome="grounded", answer=answer, grounded=True,
                 citations=citations, retrieved_chunk_count=len(units),
                 diagnostic={"structured_operation": plan.operation, "selected_rows": len(result.rows), "verified": True,
-                            "structured_plan": structured.plan_diagnostic(plan, units[0].table_row.headers),
+                            "plan_verified": True, "structured_plan": structured.plan_diagnostic(plan, units[0].table_row.headers),
                             "table_candidates": traces})
         except structured.StructuredError as exc:
             return GroundedResponse(**response, outcome="insufficient_evidence", answer=None, grounded=False,
