@@ -32,6 +32,7 @@ import yaml
 from app.core.config import Settings
 from app.domain.models import FidelityTier, TableRow, KeyValue
 from app.services.ocr import BoundingBox, OcrEngine, build_engine
+from app.services.docx_pages import DocxBlock, read_docx
 
 try:
     import fitz  # PyMuPDF
@@ -85,6 +86,7 @@ class ParsedPage:
     engine: str | None = None
     table_rows: list[TableRow] = field(default_factory=list)
     key_values: list[KeyValue] = field(default_factory=list)
+    docx_blocks: list[DocxBlock] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -426,35 +428,18 @@ def parse_html(payload: bytes) -> ParsedDocument | None:
 
 def parse_docx(payload: bytes) -> ParsedDocument | None:
     try:
-        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-            part_names = sorted(
-                name
-                for name in archive.namelist()
-                if name == "word/document.xml" or name.startswith("word/header") or name.startswith("word/footer")
-            )
-            pages_parts: list[list[str]] = [[]]
-            for part_name in part_names:
-                root = ElementTree.fromstring(archive.read(part_name))
-                for node in root.iter():
-                    if node.tag == f"{WORD_NS}br" and node.get(f"{WORD_NS}type") == "page":
-                        pages_parts.append([])
-                    elif node.tag.endswith("}t") and node.text:
-                        pages_parts[-1].append(node.text)
-                    elif node.tag.endswith("}tab"):
-                        pages_parts[-1].append("\t")
-                    elif node.tag.endswith("}br") or node.tag.endswith("}p"):
-                        pages_parts[-1].append("\n")
+        blocks, page_count = read_docx(payload)
     except (ElementTree.ParseError, KeyError, OSError, zipfile.BadZipFile):
         return None
-
     pages: list[ParsedPage] = []
-    for index, parts in enumerate(pages_parts, start=1):
-        text = re.sub(r"\n{3,}", "\n\n", "".join(parts)).strip()
-        if text and _has_min_alnum(text):
-            pages.append(ParsedPage(index, text, "native"))
+    for number in range(1, page_count + 1):
+        page_blocks = [block for block in blocks if block.page == number]
+        text = "\n\n".join(block.text for block in page_blocks)
+        if text:
+            pages.append(ParsedPage(number, text, "native", docx_blocks=page_blocks))
     if not pages:
         return None
-    return ParsedDocument(pages=pages, fidelity_tier="full_layout", page_count=len(pages))
+    return ParsedDocument(pages=pages, fidelity_tier="structural", page_count=page_count)
 
 
 def parse_xlsx(payload: bytes) -> ParsedDocument | None:

@@ -83,6 +83,7 @@ if _SQLALCHEMY_AVAILABLE:
         file_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
         table_row: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
         key_value: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+        paragraph_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     class ProviderConfigRow(Base):
         __tablename__ = "provider_configs"
@@ -187,6 +188,7 @@ class SqlDocumentRepository:
                     file_type=document.file_type,
                     table_row=chunk.table_row,
                     key_value=chunk.key_value,
+                    paragraph_number=chunk.paragraph_number,
                 )
                 session.add(self._from_evidence(evidence))
                 self.evidence[evidence_id] = evidence
@@ -324,6 +326,7 @@ class SqlDocumentRepository:
                 "file_type": row.file_type,
                 "table_row": row.table_row,
                 "key_value": row.key_value,
+                "paragraph_number": row.paragraph_number,
             }
         )
 

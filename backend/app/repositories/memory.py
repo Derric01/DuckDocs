@@ -117,6 +117,7 @@ class DocumentRepository:
                 file_type=document.file_type,
                 table_row=chunk.table_row,
                 key_value=chunk.key_value,
+                paragraph_number=chunk.paragraph_number,
             )
         self._persist()
         return len(chunks)

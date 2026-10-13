@@ -1,0 +1,42 @@
+# Phase 6: DOCX page awareness
+
+Baseline: `scorecard_phase5b-verify.json`, HEAD `199b551` (12 PASS / 0 PARTIAL / 1 FAIL).
+
+DOCX body paragraphs and table-cell paragraphs are read in document order. Page
+numbers are physical, one-based positions derived from explicit page breaks,
+page-break-before (including inherited paragraph styles), section starts, and
+stored rendered page-break markers. A rendered marker immediately following a
+hard boundary confirms that boundary instead of creating an extra page. Empty
+pages retain their physical position. Continuous sections do not create a page;
+odd/even section starts retain intervening blank pages. Referenced running
+headers/footers belong to their section's pages and do not enter body counts.
+
+DOCX is marked `structural`: this parser does not perform Word layout or infer
+unrecorded automatic wrapping. Rendered markers describe the last saved layout
+and can be stale after edits in tools that do not refresh them. Page numbers are
+physical positions, not restarted/custom page labels in a footer.
+
+Evidence is split at body paragraph, table-cell paragraph and page boundaries.
+Long paragraphs retain their ordinal across bounded overlapping chunk windows.
+Table cells retain their table/row/cell location in the existing section field.
+The existing `page` field needs no schema change; migration `0006` adds nullable
+`paragraph_number` so body ordinals survive repository restarts. Legacy rows
+remain intact with an unknown ordinal until re-ingestion.
+
+Re-ingest existing DOCX files using their document retry action after rebuilding
+and applying migrations. This replaces their derived evidence/vector records
+from the preserved original upload; do not upload duplicate library documents.
+Other formats do not require re-ingestion for this phase.
+
+The existing label-value regression now supplies all parsed DOCX paragraphs to
+retrieval. Its old assumption that the entire document occupied `chunks[0]` no
+longer represented ingestion; the expected label value and exact quote are unchanged.
+
+Synthetic tests build their own documents with `python-docx==1.2.0`, a small dev
+dependency. On each rebuilt test container, install it before the standard test
+block: `docker compose exec -u root backend pip install -q python-docx==1.2.0`.
+Then copy `backend/tests` and run container pytest as in the handoff preamble.
+
+OOXML behavior references:
+- https://python-docx.readthedocs.io/en/latest/dev/analysis/features/text/breaks.html
+- https://python-docx.readthedocs.io/en/latest/dev/analysis/features/sections.html

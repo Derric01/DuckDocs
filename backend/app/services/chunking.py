@@ -32,9 +32,13 @@ class ChunkCandidate:
     bbox: tuple[float, float, float, float] | None = None
     table_row: TableRow | None = None
     key_value: KeyValue | None = None
+    paragraph_number: int | None = None
+    location: str | None = None
 
     @property
     def section(self) -> str:
+        if self.location:
+            return self.location[:256]
         if self.table_row:
             sheet = f"Sheet: {self.table_row.sheet_name} / " if self.table_row.sheet_name else ""
             return f"{sheet}Row {self.table_row.row_number}"[:256]
@@ -154,7 +158,19 @@ def chunk_document(
 ) -> list[ChunkCandidate]:
     candidates: list[ChunkCandidate] = []
     for page in parsed.pages:
-        if page.table_rows:
+        if page.docx_blocks:
+            line = 1
+            for block in page.docx_blocks:
+                end = line + len(block.text.splitlines()) - 1
+                windows = _split_oversized_paragraphs(
+                    [(line, end, block.text)], settings.chunk_max_words, settings.chunk_overlap_words
+                )
+                candidates.extend(ChunkCandidate(
+                    page.page_number, start, stop, text, None, "cell" if block.is_cell else "paragraph",
+                    parsed.fidelity_tier, paragraph_number=block.paragraph_number, location=block.location,
+                ) for start, stop, text in windows)
+                line = end + 2
+        elif page.table_rows:
             candidates.extend(ChunkCandidate(page.page_number, row.row_number, row.row_number,
                                              row.quote(), None, "cell", parsed.fidelity_tier,
                                              table_row=row) for row in page.table_rows)

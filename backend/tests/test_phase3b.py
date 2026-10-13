@@ -247,15 +247,18 @@ def test_docx_label_value_wins_over_heading_and_first_paragraph(tmp_path: Path, 
     parsed = parse_docx(payload)
     assert parsed is not None
     chunks = chunk_document(parsed, Settings())
-    unit = _evidence("report", "audit.docx", chunks[0].text)
-    _, sentence = _most_relevant_sentence(question, [(unit.id, unit.snippet)])
+    # DOCX evidence now preserves paragraph boundaries; exercise every paragraph.
+    units = [_evidence(f"report_{index}", "audit.docx", chunk.text).model_copy(
+        update={"document_id": "doc_report", "page": chunk.page, "paragraph_number": chunk.paragraph_number}
+    ) for index, chunk in enumerate(chunks)]
+    _, sentence = _most_relevant_sentence(question, [(unit.id, unit.snippet) for unit in units])
     assert sentence == "Audit reference: REF-CEDAR-572."
-    service = _service(tmp_path, [unit], _Chat('{"answer":"","evidence_ids":[]}'))
+    service = _service(tmp_path, units, _Chat('{"answer":"","evidence_ids":[]}'))
     response = service.ask(question)
     assert response.outcome == "grounded"
     assert response.answer == "Audit reference: REF-CEDAR-572."
     assert response.citations[0].snippet == "Audit reference: REF-CEDAR-572"
-    assert response.citations[0].snippet in unit.snippet
+    assert any(response.citations[0].snippet in unit.snippet for unit in units)
 
 
 def test_label_selection_does_not_choose_a_different_property() -> None:

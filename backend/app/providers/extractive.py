@@ -38,7 +38,7 @@ class ExtractiveChatAdapter:
             text = "INSUFFICIENT_EVIDENCE"
         else:
             snippets = _extract_chunk_bodies(prompt)
-            pairs = list(zip(chunk_ids, snippets, strict=False))[:3]
+            pairs = list(zip(chunk_ids, snippets, strict=False))
             tabular = _answer_tabular_question(prompt, pairs)
             if tabular:
                 text = tabular
@@ -146,6 +146,12 @@ def _most_relevant_sentence(
         "failed", "stopped", "rest", "nap", "sleep", "slept", "forgot", "ignored", "misjudged",
     }
     candidates: list[tuple[int, int, str, str]] = []
+    # A label's value can be a separate paragraph/chunk from its heading.
+    # Preserve label selection across that storage boundary as well as within it.
+    label_pairs = [(key, "\n".join(_matching_label_passages(question, text))) for key, text in pairs]
+    label_pairs = [(key, text) for key, text in label_pairs if text]
+    if label_pairs:
+        pairs = label_pairs
     for chunk_index, (chunk_id, snippet) in enumerate(pairs):
         source_lines = [line.strip() for line in snippet.splitlines() if line.strip()]
         sentences = [

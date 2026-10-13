@@ -70,6 +70,7 @@ class Evidence(BaseModel):
     file_type: str | None = None
     table_row: TableRow | None = None
     key_value: KeyValue | None = None
+    paragraph_number: int | None = Field(default=None, ge=1)
 
 
 class Document(BaseModel):
