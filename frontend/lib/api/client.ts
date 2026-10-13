@@ -82,6 +82,7 @@ interface ApiGroundedResponse {
   citations: Array<{ id: string; ordinal: number; evidence_unit_id: string; snippet: string }>;
   provider: { name: string; model: string };
   refusal_reason?: string | null;
+  refusal_detail?: string | null;
 }
 
 export interface GroundedAnswer {
@@ -91,6 +92,7 @@ export interface GroundedAnswer {
   citations: EvidenceRecord[];
   providerLabel: string;
   refusalReason?: string | null;
+  refusalDetail?: string | null;
 }
 
 export interface AskStreamHandlers {
@@ -299,6 +301,7 @@ async function hydrateAnswer(response: ApiGroundedResponse): Promise<GroundedAns
     citations,
     providerLabel: `${response.provider.name} ${response.provider.model}`.trim(),
     refusalReason: response.refusal_reason,
+    ...(response.refusal_detail ? { refusalDetail: response.refusal_detail } : {}),
   };
 }
 

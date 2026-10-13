@@ -21,6 +21,7 @@ from app.providers.extractive import _matching_label_passages
 from app.providers.registry import ProviderRegistry
 from app.repositories import AnyRepository
 from app.services.vector_store import RetrievedChunk, VectorStore, relevance_bucket
+from app.services import structured
 
 CITATION_RE = re.compile(r"\[chunk:([^\]]+)\]")
 logger = logging.getLogger("duckdocs.rag")
@@ -1121,7 +1122,60 @@ class RagService:
         self.vector_store.delete_document(document_id, keep_ids={unit.id for unit in units})
         return indexed_count
 
+    def _ask_table(self, query: str, scope: SearchScope | None) -> GroundedResponse | None:
+        all_units = list(self.repository.all_evidence())
+        if scope and scope.type == "document":
+            all_units = [e for e in all_units if e.document_id == scope.document_id]
+        elif scope and scope.type == "selection":
+            all_units = [e for e in all_units if e.document_id in (scope.document_ids or [])]
+        named = {e.document_id for e in all_units if re.search(
+            rf"(?<!\w){re.escape(e.document_name)}(?!\w)", query, re.I)}
+        if named:
+            all_units = [e for e in all_units if e.document_id in named]
+        ids = {e.id for e in all_units}
+        eligible = [e for e in all_units if self._matches_candidate_hints(query, e, ids)]
+        tables: dict[tuple[str, int], list[Evidence]] = {}
+        for unit in eligible:
+            if unit.table_row:
+                tables.setdefault((unit.document_id, unit.page), []).append(unit.model_copy(deep=True))
+        explicit = bool(re.search(r"\b(?:csv|xlsx|excel|spreadsheet|table)\b", query, re.I) or named
+                        or (scope and scope.type == "document"))
+        scores = {key: sum(structured.mentioned(h, query) for h in units[0].table_row.headers)
+                       + 2 * int(structured.mentioned(units[0].table_row.sheet_name or "", query))
+                       + sum(any(structured.mentioned(c, query) for c in e.table_row.cells
+                                 if re.search(r"[A-Za-z]", c)) for e in units if not e.table_row.is_header)
+                  for key, units in tables.items()}
+        if not tables or (not explicit and not any(scores.values())):
+            return None
+        response = dict(id=f"resp_{uuid4().hex[:12]}", kind="ask", query=query,
+                        created_at=utc_now(), provider={"kind": "chat", "name": "deterministic", "model": "structured_v1"})
+        try:
+            best = max(scores.values())
+            choices = [key for key, score in scores.items() if score == best]
+            if re.search(r"\b(?:spreadsheet|sheet)\b", query, re.I) and not re.search(r"\bcsv\b", query, re.I):
+                workbooks = [key for key in choices if tables[key][0].file_type == "xlsx"]
+                choices = workbooks or choices
+            if len(choices) != 1:
+                raise structured.StructuredError("ambiguous_table", "Several tables match. Name the file and sheet to use.")
+            key = choices[0]
+            units = tables[key]
+            plan = structured.plan_question(query, units)
+            result = structured.execute(plan, units)
+            fresh = [e for e in self.repository.all_evidence() if (e.document_id, e.page) == key]
+            structured.verify_execution(result, fresh)
+            answer, citations = structured.answer_execution(query, result, units)
+            return GroundedResponse(**response, outcome="grounded", answer=answer, grounded=True,
+                citations=citations, retrieved_chunk_count=len(units),
+                diagnostic={"structured_operation": plan.operation, "selected_rows": len(result.rows), "verified": True})
+        except structured.StructuredError as exc:
+            return GroundedResponse(**response, outcome="insufficient_evidence", answer=None, grounded=False,
+                citations=[], retrieved_chunk_count=sum(len(t) for t in tables.values()),
+                refusal_reason=exc.code, refusal_detail=str(exc))
+
     def ask(self, query: str, scope: SearchScope | None = None) -> GroundedResponse:
+        table_answer = self._ask_table(query, scope)
+        if table_answer is not None:
+            return table_answer
         total_started = perf_counter()
         stage_started = perf_counter()
         chunks = self.retrieve(query, scope)

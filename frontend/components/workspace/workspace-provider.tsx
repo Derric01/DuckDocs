@@ -222,6 +222,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             timestamp: timestamp(),
             content:
               answer.answer ??
+              answer.refusalDetail ??
               'I could not find enough evidence in your library to answer that. Try narrowing the question, or add a source document.',
             citations: answer.citations,
             state: answer.outcome === 'grounded' ? 'grounded' : 'insufficient_evidence',

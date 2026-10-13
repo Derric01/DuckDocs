@@ -146,6 +146,9 @@ class Citation(BaseModel):
     ordinal: int
     evidence_unit_id: str
     snippet: str
+    sheet_name: str | None = None
+    row_number: int | None = None
+    column: str | None = None
 
 
 class GroundedResponse(BaseModel):
@@ -160,6 +163,7 @@ class GroundedResponse(BaseModel):
     provider: dict[str, str]
     created_at: datetime
     refusal_reason: str | None = None
+    refusal_detail: str | None = None
     diagnostic: dict[str, Any] | None = None
 
 

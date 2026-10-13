@@ -19,3 +19,12 @@ values on one column use OR. Numeric inputs use Decimal, with validated comma
 thousands separators, currency symbols/codes, negatives and percentages (displayed
 in percentage points). Ambiguous columns, incomplete tables, nonnumeric cells and
 incompatible units are refused. There is no model planner or executable code path.
+
+Structured Q&A reads the complete stored table, not a retrieval top-k sample. A
+second pass reads cells again and independently recomputes the selected inputs and
+result. Any mismatch refuses the answer. Calculations show their inputs and only
+cite relevant cell quotes, with sheet/row/column coordinates. Lookups return only
+requested columns (plus an identity column for "who/which" questions). The API adds
+optional citation coordinates and a human-readable refusal_detail; the Ask UI
+shows that explanation. Explicit Excel requests cannot use CSV; an ambiguous table
+requires a file/sheet name rather than choosing arbitrary evidence.

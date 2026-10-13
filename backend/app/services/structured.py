@@ -226,3 +226,86 @@ def execute(plan: Plan, units: list[Evidence]) -> Execution:
     else:
         raise StructuredError("unsupported_operation", "This table operation is not supported.")
     return Execution(plan, selected, inputs, Number(result, next(iter(units_present), "")))
+
+
+def verify_execution(result: Execution, fresh_units: list[Evidence]) -> None:
+    """Independently recompute using newly read cells, not execute()'s result."""
+    _, rows = table_complete(fresh_units)
+    selected = [row for row in rows if matches(row, result.plan.filters)]
+    if [row.id for row in selected] != [row.id for row in result.rows]:
+        raise StructuredError("calculation_verification_failed", "The selected rows changed before verification.")
+    if any(fresh.table_row != old.table_row for fresh, old in zip(selected, result.rows)):
+        raise StructuredError("calculation_verification_failed", "Stored cells changed before verification.")
+    if result.plan.operation == "lookup":
+        if result.value is not None or result.inputs:
+            raise StructuredError("calculation_verification_failed", "Unexpected computed lookup value.")
+        return
+    if result.plan.operation == "count":
+        verified = Number(Decimal(len(selected)))
+    else:
+        cells = [number(row.table_row.cells[result.plan.columns[0]]) for row in selected]
+        if tuple(cells) != result.inputs or not cells:
+            raise StructuredError("calculation_verification_failed", "Calculation inputs do not match stored cells.")
+        # Separate accumulation and operation dispatch from the executor.
+        total = Decimal(0)
+        smallest = largest = cells[0].value
+        for cell in cells:
+            total += cell.value
+            smallest = min(smallest, cell.value)
+            largest = max(largest, cell.value)
+        value = {"sum": total, "average": total / len(cells), "min": smallest, "max": largest}[result.plan.operation]
+        verified = Number(value, next((cell.unit for cell in cells if cell.unit), ""))
+    if result.value != verified:
+        raise StructuredError("calculation_verification_failed", "The independently recomputed result disagrees.")
+
+
+def display_number(value: Number) -> str:
+    digits = format(value.value, "f")
+    if "." in digits:
+        digits = digits.rstrip("0").rstrip(".")
+    return f"{digits}%" if value.unit == "%" else f"{value.unit} {digits}".strip()
+
+
+def answer_execution(query: str, result: Execution, table_units: list[Evidence]):
+    """Return relevant cells as exact substrings of their canonical stored quotes."""
+    from uuid import uuid4
+    from app.domain.models import Citation
+    citations: list[Citation] = []
+    lines: list[str] = []
+    if result.plan.operation == "lookup":
+        for row in result.rows:
+            metadata = row.table_row
+            columns = list(result.plan.columns)
+            if re.search(r"\b(?:who|which|people|employees|persons)\b", query, re.I):
+                columns = sorted(set(columns) | {i for i, h in enumerate(metadata.headers)
+                                                if normalized(h) in {"name", "person", "employee", "full name"}})
+            lines.append("; ".join(f"{metadata.headers[i]}: {metadata.cells[i]}" for i in columns))
+            for i in columns:
+                quote = f"{metadata.headers[i]}: {metadata.cells[i]}"
+                if quote not in row.snippet:
+                    raise StructuredError("cell_evidence_mismatch", "A cited cell is absent from its stored row.")
+                citations.append(Citation(id=f"cit_{uuid4().hex[:10]}", ordinal=len(citations) + 1,
+                    evidence_unit_id=row.id, snippet=quote, sheet_name=metadata.sheet_name,
+                    row_number=metadata.row_number, column=metadata.headers[i]))
+        return "\n".join(lines), citations
+    for row in result.rows or tuple(u for u in table_units if u.table_row.is_header):
+        metadata = row.table_row
+        index = result.plan.columns[0] if result.plan.operation != "count" else (
+            result.plan.filters[0].column if result.plan.filters else 0)
+        quote = f"{metadata.headers[index]}: {metadata.cells[index]}"
+        citations.append(Citation(id=f"cit_{uuid4().hex[:10]}", ordinal=len(citations) + 1,
+            evidence_unit_id=row.id, snippet=quote, sheet_name=metadata.sheet_name,
+            row_number=metadata.row_number, column=metadata.headers[index]))
+    output = display_number(result.value)
+    if result.plan.operation == "count":
+        inputs = " + ".join("1" for _ in result.rows) or "0 matching rows"
+        return f"Count: {inputs} = {output}", citations
+    column = table_units[0].table_row.headers[result.plan.columns[0]]
+    inputs = [display_number(n) for n in result.inputs]
+    if result.plan.operation == "sum":
+        expression = " + ".join(inputs)
+    elif result.plan.operation == "average":
+        expression = f"({' + '.join(inputs)}) / {len(inputs)}"
+    else:
+        expression = f"{result.plan.operation}({', '.join(inputs)})"
+    return f"{column}: {expression} = {output}", citations
