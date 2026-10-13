@@ -996,6 +996,28 @@ class RagService:
                 refusal_reason="insufficient_evidence",
                 diagnostic={"top_score": 0.0, "threshold": self.settings.min_similarity},
             )
+        if chunks[0].lexical_coverage < self.settings.min_support:
+            _log_stage("total", total_started, outcome="insufficient_evidence", reason="low_support")
+            return GroundedResponse(
+                id=response_id,
+                kind="ask",
+                query=query,
+                outcome="insufficient_evidence",
+                answer=None,
+                grounded=False,
+                citations=[],
+                retrieved_chunk_count=len(chunks),
+                provider=provider_meta,
+                created_at=now,
+                refusal_reason="low_support",
+                diagnostic={
+                    "top_score": chunks[0].score,
+                    "threshold": self.settings.min_similarity,
+                    "min_support": self.settings.min_support,
+                    **self._retrieval_signals(chunks),
+                    "top5": self._retrieval_top5(chunks),
+                },
+            )
         chunks = self._prioritize_hint_chunks(query, chunks)
         ask_chunks = chunks[: self.settings.ask_max_chunks]
 

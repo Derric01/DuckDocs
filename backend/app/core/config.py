@@ -25,6 +25,7 @@ class Settings:
     ollama_base_url: str = "http://localhost:11434"
     top_k: int = 12
     min_similarity: float = 0.35
+    min_support: float = 0.1
     relevance_high_threshold: float = 0.75
     relevance_medium_threshold: float = 0.5
     db_url: str | None = None
@@ -66,6 +67,7 @@ class Settings:
             ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/"),
             top_k=int(os.getenv("DUCKDOCS_TOP_K", "12")),
             min_similarity=float(os.getenv("DUCKDOCS_MIN_SIMILARITY", "0.35")),
+            min_support=float(os.getenv("DUCKDOCS_MIN_SUPPORT", "0.1")),
             relevance_high_threshold=float(os.getenv("DUCKDOCS_RELEVANCE_HIGH_THRESHOLD", "0.75")),
             relevance_medium_threshold=float(os.getenv("DUCKDOCS_RELEVANCE_MEDIUM_THRESHOLD", "0.5")),
             db_url=db_url,

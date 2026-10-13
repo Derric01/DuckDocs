@@ -89,10 +89,10 @@ def _evidence(evidence_id: str, document_name: str, snippet: str) -> Evidence:
     )
 
 
-def _service(evidence: list[Evidence]) -> RagService:
+def _service(evidence: list[Evidence], *, min_support: float = 0.0) -> RagService:
     repo = DocumentRepository(Path("test-data"))
     repo.evidence = {item.id: item for item in evidence}
-    settings = Settings(data_root=Path("test-data"), top_k=12)
+    settings = Settings(data_root=Path("test-data"), top_k=12, min_support=min_support)
     registry = _Registry()
     vector_store = VectorStore(settings)
     vector_store._available = False
@@ -117,6 +117,22 @@ def test_single_document_factual_lookup_returns_grounded_answer() -> None:
     assert response.outcome == "grounded"
     assert response.citations[0].evidence_unit_id == "ev_priya"
     assert response.diagnostic["top_score"] > 0
+
+
+def test_low_top_passage_support_refuses_before_model_call() -> None:
+    service = _service([_evidence("ev_notes", "notes.md", "unrelated text")], min_support=0.1)
+    chunk = RetrievedChunk(
+        evidence=service.repository.evidence["ev_notes"],
+        score=1.0,
+        raw_cosine=0.7,
+        lexical_coverage=0.07,
+    )
+    service.retrieve = lambda query, scope=None: [chunk]  # type: ignore[method-assign]
+
+    response = service.ask("What is the pricing model?")
+
+    assert response.refusal_reason == "low_support"
+    assert response.diagnostic["min_support"] == 0.1
 
 
 def test_numeric_aggregation_query_keeps_multiple_supporting_rows() -> None:
