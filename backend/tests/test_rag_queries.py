@@ -212,7 +212,9 @@ def test_native_text_hint_filters_candidates_before_top_k() -> None:
     service = _service(
         [
             _evidence("ev_native", "01-native-text.pdf", "Native text marker NATIVE-PDF-7f3a2b"),
-            _evidence("ev_scan", "02-scanned-ocr.pdf", "OCR marker SCAN-PDF-9d1c4e"),
+            _evidence("ev_scan", "02-scanned-ocr.pdf", "OCR marker SCAN-PDF-9d1c4e").model_copy(
+                update={"fidelity_tier": "ocr_dependent", "ocr_confidence": 0.9}
+            ),
         ]
     )
     service.vector_store.query = lambda *args, **kwargs: []  # type: ignore[method-assign]

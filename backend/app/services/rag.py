@@ -96,7 +96,7 @@ class GroundingGate:
         if stripped == "INSUFFICIENT_EVIDENCE" or stripped.startswith("INSUFFICIENT_EVIDENCE"):
             return GateResult(outcome="insufficient_evidence", text=None, cited_ids=[], reason="model_declined")
 
-        if stripped.startswith("{"):
+        if stripped.startswith("{") and not CITATION_RE.search(stripped):
             try:
                 json.loads(stripped)
             except json.JSONDecodeError:
@@ -308,7 +308,9 @@ def _parse_structured_claims(raw_output: str) -> list[tuple[str, str, str]] | No
     try:
         payload = json.loads(raw_output)
     except json.JSONDecodeError:
-        return []
+        # Extractive answers may quote source JSON followed by an app citation.
+        # They still need the ordinary claim, format, and citation checks.
+        return None if CITATION_RE.search(raw_output) else []
     claims = payload.get("claims") if isinstance(payload, dict) else None
     if claims is None:
         return None
@@ -798,6 +800,8 @@ class RagService:
             document_ids = list(scope.document_ids)
 
         candidate_ids = self._hint_candidate_ids(query, document_ids)
+        if candidate_ids == set():
+            return []
         candidate_document_ids = (
             sorted({self.repository.evidence[evidence_id].document_id for evidence_id in candidate_ids})
             if candidate_ids is not None
@@ -956,11 +960,15 @@ class RagService:
             for evidence in self.repository.evidence.values()
             if evidence.id in candidates and self._matches_candidate_hints(query, evidence, candidates)
         }
-        return hinted or None
+        return hinted
 
     def _matches_candidate_hints(self, query: str, evidence: Evidence, candidate_ids: set[str]) -> bool:
         lowered = query.lower()
         extension = evidence.document_name.lower().rsplit(".", 1)[-1]
+        if re.search(r"\b(?:excel|xlsx)\b", lowered) and extension != "xlsx":
+            return False
+        if re.search(rf"(?<!\w){re.escape(evidence.document_name)}(?!\w)", query, flags=re.I):
+            return True
         if "native text pdf" in lowered and (extension != "pdf" or evidence.fidelity_tier == "ocr_dependent"):
             return False
         if "scanned" in lowered and evidence.fidelity_tier != "ocr_dependent":
@@ -1025,16 +1033,12 @@ class RagService:
 
     @staticmethod
     def _has_lexical_support(query: str, snippet: str, document_name: str = "") -> bool:
-        query_terms = {
-            term
-            for term in re.findall(r"[a-z0-9][a-z0-9_.-]*", query.lower())
-            if term not in _RETRIEVAL_SUPPORT_STOP_WORDS
-        }
+        query_terms = _split_terms(query) - _RETRIEVAL_SUPPORT_STOP_WORDS
         if not query_terms:
             return False
-        snippet_terms = set(re.findall(r"[a-z0-9][a-z0-9_.-]*", f"{document_name} {snippet}".lower()))
+        snippet_terms = _split_terms(f"{document_name} {snippet}")
         matches = sum(term in snippet_terms for term in query_terms)
-        if document_name and any(term == document_name.lower() for term in query_terms):
+        if document_name and re.search(rf"(?<!\w){re.escape(document_name)}(?!\w)", query, flags=re.I):
             return True
         return matches >= (1 if len(query_terms) == 1 else 2)
 

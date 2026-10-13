@@ -155,3 +155,36 @@ def test_explicit_excel_retrieval_with_both_formats_keeps_only_xlsx(tmp_path: Pa
     service = _service(tmp_path, [csv, excel], _Chat('{"answer":"","evidence_ids":[]}'))
     chunks = service.retrieve(f"What is the annual budget in the {word} file?")
     assert [chunk.evidence.document_name for chunk in chunks] == ["budget.xlsx"]
+
+
+def test_json_key_lookup_survives_unavailable_vectors(tmp_path: Path) -> None:
+    unit = _evidence("config", "service-settings.json", '{"beacon": "SIGNAL-842", "owner": "local"}')
+    note = _evidence("note", "overview.md", "A general description of service settings.")
+    chat = _Chat('{"answer":"The beacon is SIGNAL-842.","evidence_ids":[1]}')
+    service = _service(tmp_path, [unit, note], chat)
+    chunks = service.retrieve("What's the beacon value in the JSON file?")
+    assert [chunk.evidence.id for chunk in chunks] == ["config"]
+    response = service.ask("What's the beacon value in the JSON file?")
+    assert response.outcome == "grounded"
+    assert "SIGNAL-842" in response.answer
+    assert [citation.evidence_unit_id for citation in response.citations] == ["config"]
+
+
+def test_explicit_format_with_no_candidate_does_not_search_other_documents(tmp_path: Path) -> None:
+    unit = _evidence("note", "overview.md", "The beacon is SIGNAL-842.")
+    service = _service(tmp_path, [unit], _Chat('{"answer":"","evidence_ids":[]}'))
+    assert service._hint_candidate_ids("What is the beacon in the JSON file?", None) == set()
+    assert service.retrieve("What is the beacon in the JSON file?") == []
+
+
+def test_compound_term_matching_keeps_explicit_filename_lookup() -> None:
+    assert RagService._has_lexical_support("What does service-settings.json say?", '{"beacon":"local"}', "service-settings.json")
+
+
+def test_cited_source_json_is_validated_as_evidence_not_a_model_envelope() -> None:
+    unit = _evidence("config", "settings.json", '{"beacon":"SIGNAL-842","owner":"local"}')
+    result = GroundingGate().validate(
+        unit.snippet + " [chunk:1].", {"1"}, evidence_by_id={"1": unit.snippet},
+        evidence_metadata={"1": unit}, query="What is the beacon value in the JSON file?",
+    )
+    assert result.outcome == "grounded"
