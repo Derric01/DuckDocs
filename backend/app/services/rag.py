@@ -997,11 +997,12 @@ class RagService:
                 diagnostic={"top_score": 0.0, "threshold": self.settings.min_similarity},
             )
         chunks = self._prioritize_hint_chunks(query, chunks)
+        ask_chunks = chunks[: self.settings.ask_max_chunks]
 
         stage_started = perf_counter()
         prompt = build_ask_prompt(
             query,
-            chunks,
+            ask_chunks,
             max_chunks=self.settings.ask_max_chunks,
             max_chars=self.settings.ask_chunk_max_chars,
             context_window=self.settings.ask_num_ctx,
@@ -1025,14 +1026,14 @@ class RagService:
             }
             raw = chat.generate(prompt, stream=False)
         raw_text = raw if isinstance(raw, str) else "".join(raw)
-        allowed = {str(index) for index, chunk in enumerate(chunks[: self.settings.ask_max_chunks], start=1)}
+        allowed = {str(index) for index, chunk in enumerate(ask_chunks, start=1)}
         evidence_by_id = {
             str(index): chunk.evidence.snippet
-            for index, chunk in enumerate(chunks[: self.settings.ask_max_chunks], start=1)
+            for index, chunk in enumerate(ask_chunks, start=1)
         }
         evidence_metadata = {
             str(index): chunk.evidence
-            for index, chunk in enumerate(chunks[: self.settings.ask_max_chunks], start=1)
+            for index, chunk in enumerate(ask_chunks, start=1)
         }
         stage_started = perf_counter()
         gate = self.gate.validate(

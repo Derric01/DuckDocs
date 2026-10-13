@@ -8,6 +8,7 @@ from app.repositories.memory import DocumentRepository
 from app.services.rag import (
     GroundingGate,
     RagService,
+    build_ask_prompt,
     _evidence_matches_query_hints,
     select_evidence_passage,
 )
@@ -55,6 +56,23 @@ def test_document_name_tokens_break_equal_fused_retrieval_ties() -> None:
     assert RagService._document_name_boost("test marker in the scanned OCR PDF", ocr) > RagService._document_name_boost(
         "test marker in the scanned OCR PDF", multipage
     )
+
+
+def test_prompt_numbering_matches_evidence_maps_after_hint_reordering() -> None:
+    first = _evidence("ev_first", "02-scanned-ocr.pdf", "OCR marker")
+    second = _evidence("ev_second", "notes.md", "unrelated note")
+    chunks = [
+        RetrievedChunk(evidence=first, score=1.0),
+        RetrievedChunk(evidence=second, score=0.9),
+    ]
+    prompt = build_ask_prompt("What is the OCR marker?", chunks, max_chunks=2)
+
+    assert "[[chunk:1]]\nOCR marker" in prompt
+    assert "[[chunk:2]]\nunrelated note" in prompt
+    assert {str(index): chunk.evidence.snippet for index, chunk in enumerate(chunks, start=1)} == {
+        "1": "OCR marker",
+        "2": "unrelated note",
+    }
 
 def _evidence(evidence_id: str, document_name: str, snippet: str) -> Evidence:
     return Evidence(
