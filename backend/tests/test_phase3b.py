@@ -265,3 +265,22 @@ def test_label_selection_does_not_choose_a_different_property() -> None:
     )
     assert "REF-CEDAR-572" in sentence
     assert "Morgan" not in sentence
+
+
+@pytest.mark.parametrize("answer", ["Page identifier.", "Document identifier.", "PDF."])
+def test_model_label_only_answers_do_not_gain_information_from_format_words(answer: str) -> None:
+    result = GroundingGate().validate(
+        json.dumps({"answer": answer, "evidence_ids": [1]}), {"1"},
+        evidence_by_id={"1": "The page identifier is RELEASE-CEDAR-701."},
+        query="What is the release identifier in the scanned PDF?",
+    )
+    assert result.reason == "content_not_informative"
+
+
+def test_model_identifier_value_still_adds_information() -> None:
+    result = GroundingGate().validate(
+        '{"answer":"RELEASE-CEDAR-701","evidence_ids":[1]}', {"1"},
+        evidence_by_id={"1": "The identifier is RELEASE-CEDAR-701."},
+        query="What is the release identifier?",
+    )
+    assert result.outcome == "grounded"

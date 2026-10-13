@@ -517,11 +517,14 @@ def _answer_adds_no_information(answer: str, query: str | None) -> bool:
             "ninth": "9", "tenth": "10",
         }
         terms = set(re.findall(r"[a-z0-9]+", value.lower()))
-        return {ordinal_numbers.get(term, term) for term in terms if term not in _GROUNDING_STOP_WORDS}
+        return {
+            ordinal_numbers.get(term, term) for term in terms
+            if term not in _GROUNDING_STOP_WORDS | _DOCUMENT_DESCRIPTOR_TERMS
+        }
 
     answer_terms = normalized_terms(answer)
     query_terms = normalized_terms(query)
-    return bool(answer_terms) and answer_terms <= query_terms
+    return not answer_terms or answer_terms <= query_terms
 
 
 def _is_structured_document(evidence: Evidence | None) -> bool:
