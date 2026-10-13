@@ -21,13 +21,13 @@ import io
 import re
 import zipfile
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Literal
 from xml.etree import ElementTree
 
 from app.core.config import Settings
-from app.domain.models import FidelityTier
+from app.domain.models import FidelityTier, TableRow
 from app.services.ocr import BoundingBox, OcrEngine, build_engine
 
 try:
@@ -80,6 +80,7 @@ class ParsedPage:
     confidence: float | None = None
     bbox: BoundingBox | None = None
     engine: str | None = None
+    table_rows: list[TableRow] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -192,11 +193,25 @@ def parse_csv(payload: bytes) -> ParsedDocument | None:
         rows = list(csv.reader(io.StringIO(decoded)))
     except csv.Error:
         return None
-    lines = [" | ".join(cell.strip() for cell in row if cell.strip()) for row in rows]
-    text = "\n".join(line for line in lines if line).strip()
-    if not _has_min_alnum(text):
+    table = _table_rows([[cell.strip() for cell in row] for row in rows])
+    if not table:
         return None
-    return ParsedDocument(pages=[ParsedPage(1, text, "native")], fidelity_tier="structural", page_count=1)
+    text = "\n".join(row.quote() for row in table)
+    return ParsedDocument(pages=[ParsedPage(1, text, "native", table_rows=table)], fidelity_tier="structural", page_count=1)
+
+
+def _table_rows(rows: list[list[str]], sheet_name: str | None = None) -> list[TableRow]:
+    populated = [(number, cells) for number, cells in enumerate(rows, 1) if any(cells)]
+    if not populated:
+        return []
+    header_number, headers = populated[0]
+    # Retain every column, including empty cells. Ragged rows must not shift values.
+    width = max(len(cells) for _, cells in populated)
+    headers = headers + [""] * (width - len(headers))
+    return [TableRow(headers=headers, cells=cells + [""] * (width - len(cells)),
+                     sheet_name=sheet_name, row_number=number,
+                     data_row_count=len(populated) - 1, is_header=number == header_number)
+            for number, cells in populated]
 
 
 class _TextOnlyHTMLParser(HTMLParser):
@@ -277,14 +292,12 @@ def parse_xlsx(payload: bytes) -> ParsedDocument | None:
         return None
     pages: list[ParsedPage] = []
     for index, sheet in enumerate(workbook.worksheets, start=1):
-        lines: list[str] = []
+        rows: list[list[str]] = []
         for row in sheet.iter_rows(values_only=True):
-            cells = [str(cell).strip() for cell in row if cell is not None and str(cell).strip()]
-            if cells:
-                lines.append(" | ".join(cells))
-        body = "\n".join(lines).strip()
-        if body:
-            pages.append(ParsedPage(index, f"Sheet: {sheet.title}\n{body}", "native"))
+            rows.append(["" if cell is None else str(cell).strip() for cell in row])
+        table = _table_rows(rows, sheet.title)
+        if table:
+            pages.append(ParsedPage(index, "\n".join(row.quote() for row in table), "native", table_rows=table))
     workbook.close()
     if not pages:
         return None

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from app.core.config import Settings
-from app.domain.models import FidelityTier
+from app.domain.models import FidelityTier, TableRow
 from app.services.parsing import ParsedDocument, ParsedPage
 
 AnchorQuality = Literal["line", "paragraph", "cell", "bbox"]
@@ -30,6 +30,14 @@ class ChunkCandidate:
     anchor_quality: AnchorQuality
     fidelity_tier: FidelityTier
     bbox: tuple[float, float, float, float] | None = None
+    table_row: TableRow | None = None
+
+    @property
+    def section(self) -> str:
+        if self.table_row:
+            sheet = f"Sheet: {self.table_row.sheet_name} / " if self.table_row.sheet_name else ""
+            return f"{sheet}Row {self.table_row.row_number}"[:256]
+        return "Imported content"
 
 
 def _paragraphs(text: str) -> list[tuple[int, int, str]]:
@@ -143,7 +151,12 @@ def chunk_document(
 ) -> list[ChunkCandidate]:
     candidates: list[ChunkCandidate] = []
     for page in parsed.pages:
-        candidates.extend(_chunk_page(page, parsed.fidelity_tier, anchor_quality, settings))
+        if page.table_rows:
+            candidates.extend(ChunkCandidate(page.page_number, row.row_number, row.row_number,
+                                             row.quote(), None, "cell", parsed.fidelity_tier,
+                                             table_row=row) for row in page.table_rows)
+        else:
+            candidates.extend(_chunk_page(page, parsed.fidelity_tier, anchor_quality, settings))
         if len(candidates) >= settings.max_chunks_per_document:
             break
     return candidates[: settings.max_chunks_per_document]

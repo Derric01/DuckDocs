@@ -20,6 +20,22 @@ FidelityTier = Literal["full_layout", "structural", "ocr_dependent", "best_effor
 Relevance = Literal["High", "Medium", "Low"]
 
 
+class TableRow(BaseModel):
+    """Ordered cells retain blank/duplicate headers and physical row coordinates."""
+    model_config = ConfigDict(extra="forbid")
+    headers: list[str]
+    cells: list[str]
+    sheet_name: str | None = None
+    row_number: int = Field(ge=1)
+    data_row_count: int = Field(ge=0)
+    is_header: bool = False
+
+    def quote(self) -> str:
+        prefix = f"Sheet: {self.sheet_name}\n" if self.sheet_name else ""
+        values = " | ".join(f"{header}: {cell}" for header, cell in zip(self.headers, self.cells))
+        return f"{prefix}Row {self.row_number}: {values}"
+
+
 class Evidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -39,6 +55,8 @@ class Evidence(BaseModel):
     ocr_engine: str | None = None
     # Normalized page-relative box (x, y, width, height), top-left origin.
     bbox: tuple[float, float, float, float] | None = None
+    file_type: str | None = None
+    table_row: TableRow | None = None
 
 
 class Document(BaseModel):

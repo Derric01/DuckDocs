@@ -33,6 +33,7 @@ def test_fresh_database_migrates_to_head(tmp_path: Path) -> None:
     assert {"documents", "ingest_jobs", "evidence", "provider_configs", "alembic_version"} <= tables
     assert EVIDENCE_PROVENANCE_COLUMNS <= _columns(engine, "evidence")
     assert SUMMARY_COLUMNS <= _columns(engine, "documents")
+    assert {"table_row", "file_type"} <= _columns(engine, "evidence")
 
 
 def test_head_is_recorded_so_a_second_run_is_a_no_op(tmp_path: Path) -> None:

@@ -102,11 +102,11 @@ class DocumentRepository:
                 id=evidence_id,
                 document_id=document_id,
                 document_name=document.name,
-                section="Imported content",
+                section=chunk.section,
                 page=chunk.page,
                 line_start=chunk.line_start,
                 line_end=chunk.line_end,
-                snippet=chunk.text[:4000],
+                snippet=chunk.text if chunk.table_row else chunk.text[:4000],
                 retrieval_score=0.74,
                 relevance="Medium",
                 anchor_quality=chunk.anchor_quality,
@@ -114,6 +114,8 @@ class DocumentRepository:
                 ocr_confidence=chunk.ocr_confidence,
                 ocr_engine=ocr_engine if chunk.ocr_confidence is not None else None,
                 bbox=chunk.bbox,
+                file_type=document.file_type,
+                table_row=chunk.table_row,
             )
         self._persist()
         return len(chunks)

@@ -80,6 +80,8 @@ if _SQLALCHEMY_AVAILABLE:
         ocr_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
         ocr_engine: Mapped[str | None] = mapped_column(String(32), nullable=True)
         bbox: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+        file_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+        table_row: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     class ProviderConfigRow(Base):
         __tablename__ = "provider_configs"
@@ -166,11 +168,11 @@ class SqlDocumentRepository:
                     id=evidence_id,
                     document_id=document_id,
                     document_name=document.name,
-                    section="Imported content",
+                    section=chunk.section,
                     page=chunk.page,
                     line_start=chunk.line_start,
                     line_end=chunk.line_end,
-                    snippet=chunk.text[:4000],
+                    snippet=chunk.text if chunk.table_row else chunk.text[:4000],
                     retrieval_score=0.74,
                     relevance="Medium",
                     anchor_quality=chunk.anchor_quality,
@@ -178,6 +180,8 @@ class SqlDocumentRepository:
                     ocr_confidence=chunk.ocr_confidence,
                     ocr_engine=ocr_engine if chunk.ocr_confidence is not None else None,
                     bbox=chunk.bbox,
+                    file_type=document.file_type,
+                    table_row=chunk.table_row,
                 )
                 session.merge(self._from_evidence(evidence))
                 self.evidence[evidence_id] = evidence
@@ -312,6 +316,8 @@ class SqlDocumentRepository:
                 "ocr_confidence": row.ocr_confidence,
                 "ocr_engine": row.ocr_engine,
                 "bbox": tuple(row.bbox) if row.bbox else None,
+                "file_type": row.file_type,
+                "table_row": row.table_row,
             }
         )
 
