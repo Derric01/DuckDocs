@@ -25,19 +25,20 @@ def _enabled(node: ET.Element | None) -> bool:
     return node is not None and node.get(W + "val", "true").lower() not in {"false", "0", "off"}
 
 
-def _paragraphs(parent: ET.Element, location: str = "") -> Iterator[tuple[ET.Element, str]]:
-    table = 0
+def _paragraphs(parent: ET.Element, location: str = "", tables: list[int] | None = None) -> Iterator[tuple[ET.Element, str]]:
+    tables = tables if tables is not None else [0]
     for child in parent:
         if child.tag == W + "p":
             yield child, location
         elif child.tag == W + "tbl":
-            table += 1
+            tables[0] += 1
+            table = tables[0]
             for row, tr in enumerate(child.findall(W + "tr"), 1):
                 for column, tc in enumerate(tr.findall(W + "tc"), 1):
                     address = f"{location + ' / ' if location else ''}Table {table} / Row {row} / Cell {column}"
-                    yield from _paragraphs(tc, address)
+                    yield from _paragraphs(tc, address, tables)
         elif child.tag in {W + "sdt", W + "sdtContent", W + "customXml", W + "ins"}:
-            yield from _paragraphs(child, location)
+            yield from _paragraphs(child, location, tables)
 
 
 def _inline_nodes(node: ET.Element) -> Iterator[ET.Element]:
@@ -85,20 +86,33 @@ def read_docx(payload: bytes) -> tuple[list[DocxBlock], int]:
         sections.append(final_section if final_section is not None else ET.Element(W + "sectPr"))
         blocks: list[DocxBlock] = []
         page = 1
+        last_page = 1
         section = 0
         page_sections = {1: 0}
         section_first_pages = {0: 1}
         paragraph_counts: dict[int, int] = {}
         occupied: set[int] = set()
         hard_boundary_pending = False
+        row_starts: dict[str, tuple[int, bool]] = {}
+        previous_cell = ""
 
         def advance(hard: bool = True) -> None:
-            nonlocal page, hard_boundary_pending
+            nonlocal page, last_page, hard_boundary_pending
             page += 1
+            last_page = max(last_page, page)
             page_sections[page] = section
             hard_boundary_pending = hard
 
         for paragraph, location in paragraphs:
+            if location and location != previous_cell:
+                # Cells in a row begin together; a long first cell must not
+                # move the next cell's opening text to its own final page.
+                row = location.rsplit(" / Cell ", 1)[0]
+                page, hard_boundary_pending = row_starts.setdefault(row, (last_page, hard_boundary_pending))
+            elif not location and previous_cell:
+                page = last_page
+                hard_boundary_pending = page not in occupied
+            previous_cell = location
             parts: list[str] = []
             outline = paragraph_property(paragraph, "outlineLvl")
             heading = outline is not None and outline.get(W + "val", "9") in {str(i) for i in range(9)}
@@ -150,7 +164,7 @@ def read_docx(payload: bytes) -> tuple[list[DocxBlock], int]:
                 section_first_pages[section] = page
 
         _add_headers_footers(archive, sections, page_sections, section_first_pages, blocks)
-        return blocks, page
+        return blocks, last_page
 
 
 def _enabled_attribute(node: ET.Element, name: str) -> bool:

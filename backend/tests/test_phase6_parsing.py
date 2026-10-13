@@ -105,6 +105,24 @@ def test_cells_and_body_paragraphs_preserve_pages_and_reading_order():
     assert chunks[3].section == "Table 1 / Row 1 / Cell 2"
 
 
+def test_cells_share_row_start_while_following_rows_start_after_spanning_cell():
+    document = Document()
+    table = document.add_table(rows=2, cols=2)
+    run = table.cell(0, 0).paragraphs[0].add_run("Left cell opening.")
+    run.add_break(WD_BREAK.PAGE)
+    run.add_text("Left cell continuation.")
+    table.cell(0, 1).text = "Right cell still starts on the first page."
+    table.cell(1, 0).text = "Following row starts on the second page."
+    document.add_paragraph("Body after the table.")
+    parsed, chunks = parsed_chunks(document)
+    assert parsed.page_count == 2
+    assert {c.text: c.page for c in chunks} == {
+        "Left cell opening.": 1, "Left cell continuation.": 2,
+        "Right cell still starts on the first page.": 1,
+        "Following row starts on the second page.": 2, "Body after the table.": 2,
+    }
+
+
 def test_headers_and_footers_are_repeated_on_correct_pages_without_body_ordinals():
     document = Document()
     document.sections[0].header.paragraphs[0].text = "Running header."
