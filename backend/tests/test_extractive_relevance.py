@@ -192,6 +192,30 @@ def test_grounding_gate_accepts_number_for_count_question() -> None:
     assert result.outcome == "grounded"
 
 
+def test_grounding_gate_rejects_entity_without_requested_attribute() -> None:
+    result = GroundingGate().validate(
+        "Priya Nair works here. [chunk:ev_person]",
+        {"ev_person"},
+        evidence_by_id={"ev_person": "Priya Nair works here."},
+        query="What is Priya Nair's department?",
+        term_document_frequency={"priya": 1, "nair": 1, "department": 1},
+    )
+
+    assert result.reason == "attribute_missing"
+
+
+def test_grounding_gate_accepts_attribute_with_stemmed_match() -> None:
+    result = GroundingGate().validate(
+        "Priya Nair is an engineer. [chunk:ev_person]",
+        {"ev_person"},
+        evidence_by_id={"ev_person": "Priya Nair department: Engineering."},
+        query="What is Priya Nair's department?",
+        term_document_frequency={"priya": 1, "nair": 1, "department": 1},
+    )
+
+    assert result.outcome == "grounded"
+
+
 def test_grounding_gate_accepts_json_key_value_answer() -> None:
     evidence = _json_evidence = type(
         "JsonEvidence", (), {"document_name": "config.json"}

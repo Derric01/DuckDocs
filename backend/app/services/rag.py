@@ -76,6 +76,7 @@ class GroundingGate:
         evidence_by_id: dict[str, str] | None = None,
         query: str | None = None,
         evidence_metadata: dict[str, Evidence] | None = None,
+        term_document_frequency: dict[str, int] | None = None,
     ) -> GateResult:
         stripped = raw_output.strip()
         if stripped == "INSUFFICIENT_EVIDENCE" or stripped.startswith("INSUFFICIENT_EVIDENCE"):
@@ -157,6 +158,13 @@ class GroundingGate:
                     cited_ids=[],
                     reason="answer_type_missing",
                 )
+            if _attribute_missing(query, cited_ids, evidence_by_id, term_document_frequency):
+                return GateResult(
+                    outcome="insufficient_evidence",
+                    text=None,
+                    cited_ids=[],
+                    reason="attribute_missing",
+                )
             normalized = f"{answer.rstrip('.!?')} [chunk:{cited_ids[0]}]."
             return GateResult(
                 outcome="grounded",
@@ -210,6 +218,13 @@ class GroundingGate:
                     text=None,
                     cited_ids=cited_ids,
                     reason="answer_type_missing",
+                )
+            if _attribute_missing(query, cited_ids, evidence_by_id, term_document_frequency):
+                return GateResult(
+                    outcome="insufficient_evidence",
+                    text=None,
+                    cited_ids=cited_ids,
+                    reason="attribute_missing",
                 )
             sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", stripped) if part.strip()]
             factual = [sentence for sentence in sentences if _looks_factual(sentence)]
@@ -397,6 +412,36 @@ def _answer_type_missing(
     if asks_numeric and re.search(r"\b\d+(?:[.,]\d+)*\b|[$€£]\s?\d|\b\d+\s?%", source):
         return False
     return True
+
+
+def _attribute_missing(
+    query: str | None,
+    cited_ids: list[str],
+    evidence_by_id: dict[str, str] | None,
+    term_document_frequency: dict[str, int] | None,
+) -> bool:
+    if not query or not evidence_by_id or not term_document_frequency:
+        return False
+    query_terms = _split_terms(query)
+    source_terms = _split_terms(" ".join(evidence_by_id.get(evidence_id, "") for evidence_id in cited_ids))
+    capitalized_terms = _split_terms(" ".join(re.findall(r"\b[A-Z][a-z0-9_.-]*\b", query)))
+    rare_entity_terms = {
+        term for term in query_terms
+        if term in capitalized_terms and term_document_frequency.get(term, 0) <= 1
+    }
+    attribute_terms = query_terms - rare_entity_terms
+    attribute_terms -= _DOCUMENT_DESCRIPTOR_TERMS
+    if not rare_entity_terms or not attribute_terms:
+        return False
+    stemmed_source = {_stem(term) for term in source_terms}
+    return not any(_stem(term) in stemmed_source for term in attribute_terms)
+
+
+def _stem(term: str) -> str:
+    for suffix in ("ing", "ed", "es", "s"):
+        if len(term) > len(suffix) + 3 and term.endswith(suffix):
+            return term[: -len(suffix)]
+    return term
 
 
 def _looks_like_junk_output(output: str, query: str | None) -> bool:
@@ -1097,6 +1142,7 @@ class RagService:
             str(index): chunk.evidence
             for index, chunk in enumerate(ask_chunks, start=1)
         }
+        term_document_frequency, _ = self._idf_stats()
         stage_started = perf_counter()
         gate = self.gate.validate(
             raw_text,
@@ -1105,6 +1151,7 @@ class RagService:
             evidence_by_id=evidence_by_id,
             query=query,
             evidence_metadata=evidence_metadata,
+            term_document_frequency=term_document_frequency,
         )
         _log_stage("verification", stage_started, outcome=gate.outcome, reason=gate.reason or "none")
         model_rejected = (
@@ -1135,6 +1182,7 @@ class RagService:
                     evidence_by_id=evidence_by_id,
                     query=query,
                     evidence_metadata=evidence_metadata,
+                    term_document_frequency=term_document_frequency,
                 )
                 _log_stage("verification", stage_started, attempt=retry + 2, outcome=gate.outcome, reason=gate.reason or "none")
                 if gate.outcome == "grounded":
@@ -1180,6 +1228,7 @@ class RagService:
                 evidence_by_id=evidence_by_id,
                 query=query,
                 evidence_metadata=evidence_metadata,
+                term_document_frequency=term_document_frequency,
             )
             _log_stage("verification", stage_started, attempt="fallback", outcome=gate.outcome, reason=gate.reason or "none")
 
