@@ -80,8 +80,8 @@ def read_docx(payload: bytes) -> tuple[list[DocxBlock], int]:
             return None
 
         paragraphs = list(_paragraphs(body))
-        sections = [p.find(f"{W}pPr/{W}sectPr") for p, location in paragraphs if not location]
-        sections = [s for s in sections if s is not None]
+        section_nodes = [p.find(f"{W}pPr/{W}sectPr") for p, location in paragraphs if not location]
+        sections = [s for s in section_nodes if s is not None]
         final_section = body.find(W + "sectPr")
         sections.append(final_section if final_section is not None else ET.Element(W + "sectPr"))
         blocks: list[DocxBlock] = []
@@ -103,6 +103,19 @@ def read_docx(payload: bytes) -> tuple[list[DocxBlock], int]:
             page_sections[page] = section
             hard_boundary_pending = hard
 
+        def flush(parts: list[str], current_page: int, location: str, heading: bool) -> None:
+            text = "".join(parts).strip()
+            parts.clear()
+            if not text:
+                return
+            number = None
+            if not location:
+                number = paragraph_counts.get(current_page, 0) + 1
+                paragraph_counts[current_page] = number
+            address = location or f"{'Heading / ' if heading else ''}Paragraph {number}"
+            blocks.append(DocxBlock(current_page, text, number, address, bool(location)))
+            occupied.add(current_page)
+
         for paragraph, location in paragraphs:
             if location and location != previous_cell:
                 # Cells in a row begin together; a long first cell must not
@@ -117,27 +130,14 @@ def read_docx(payload: bytes) -> tuple[list[DocxBlock], int]:
             outline = paragraph_property(paragraph, "outlineLvl")
             heading = outline is not None and outline.get(W + "val", "9") in {str(i) for i in range(9)}
 
-            def flush() -> None:
-                text = "".join(parts).strip()
-                parts.clear()
-                if not text:
-                    return
-                number = None
-                if not location:
-                    number = paragraph_counts.get(page, 0) + 1
-                    paragraph_counts[page] = number
-                address = location or f"{'Heading / ' if heading else ''}Paragraph {number}"
-                blocks.append(DocxBlock(page, text, number, address, bool(location)))
-                occupied.add(page)
-
             if _enabled(paragraph_property(paragraph, "pageBreakBefore")) and page in occupied:
                 advance()
             for node in _inline_nodes(paragraph):
                 if node.tag == W + "br" and node.get(W + "type") == "page":
-                    flush()
+                    flush(parts, page, location, heading)
                     advance()
                 elif node.tag == W + "lastRenderedPageBreak":
-                    flush()
+                    flush(parts, page, location, heading)
                     if hard_boundary_pending:
                         hard_boundary_pending = False
                     else:
@@ -150,7 +150,7 @@ def read_docx(payload: bytes) -> tuple[list[DocxBlock], int]:
                     parts.append("\t")
                 elif node.tag in {W + "br", W + "cr"}:
                     parts.append("\n")
-            flush()
+            flush(parts, page, location, heading)
             if not location and paragraph.find(f"{W}pPr/{W}sectPr") is not None:
                 section += 1
                 # sectPr describes its own section; the following section's

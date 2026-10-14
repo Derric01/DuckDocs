@@ -289,10 +289,11 @@ async def _run_pipeline(
                 vector_count,
             )
 
-    # Keep the larger of the probed and parsed counts: a parser may skip pages
-    # it found nothing on, but those pages exist and are still previewable.
+    # DOCX preserves blank pages itself, and re-ingestion must replace stale
+    # legacy counts. Other parsers may skip empty but previewable pages.
     existing = repo.get_document(document_id)
-    page_count = max(parsed.page_count, existing.pages if existing else 1)
+    page_count = (parsed.page_count if suffix == "docx"
+                  else max(parsed.page_count, existing.pages if existing else 1))
 
     repo.update_document(
         document_id,

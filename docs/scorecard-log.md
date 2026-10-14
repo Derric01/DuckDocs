@@ -155,6 +155,35 @@ to be neutral: these generic wording/selection failures are not covered by its
 No migration, re-ingestion, new dependency, default model/threshold change, push
 or Phase 6 work is included.
 
+## Phase 6 — DOCX page awareness (14 October 2026)
+
+Baseline: `scorecard_phase5b-verify.json` at `199b551` (12 PASS / 0 PARTIAL /
+1 FAIL). The scorecard questions and grading patterns are unchanged, including
+Q6's existing second-page paragraph wording.
+
+DOCX parsing preserves explicit, paragraph-property, section and saved rendered
+boundaries, with physical page numbers and page-local body paragraph ordinals.
+The shared query parser constrains page/slide retrieval and citation validation.
+Located paragraph reads return verified stored text; citations preserve its page
+through the API and UI. Migration `0006` requires existing DOCX files to be retried
+from their original uploads. Details and counting rules are in
+`docs/PHASE6_DOCX_PAGES.md`.
+
+Synthetic Office packages cover the boundary types, page-spanning table cells,
+blank pages, inherited properties, headers/footers, repository persistence,
+Alembic upgrades, paragraph counting and retry of stale page counts. The final
+focused parser/citation run passed 17 tests; citation/API client UI tests passed
+35 tests. Ruff passed the new parser modules and migration; strict mypy passed
+the two new parser modules. This is not a claim of a repository-wide static check.
+
+Final committed-HEAD container pytest and rebuilt scorecard measurements, all
+13 baseline-column rows, regressions, providers, sources, timing, answer starts,
+model acceptance count, runtime metadata checks and changed files are recorded in
+`output/phase6/Phase6_Report.txt` at the workspace root, with adjacent raw logs.
+The operator's private acceptance check remains independent; its files were not
+read. Default models and `DUCKDOCS_MIN_SUPPORT` remain unchanged. Phase 7 is outside
+this work.
+
 ### Phase 3 final
 
 The support gate uses `DUCKDOCS_MIN_SUPPORT=0.1`. It is applied when the

@@ -27,6 +27,10 @@ Re-ingest existing DOCX files using their document retry action after rebuilding
 and applying migrations. This replaces their derived evidence/vector records
 from the preserved original upload; do not upload duplicate library documents.
 Other formats do not require re-ingestion for this phase.
+DOCX retry replaces an obsolete stored page count with the parser's full count,
+including blank pages, so `last page` cannot resolve to a stale legacy page.
+Cells in the same table row share its starting page; a page-spanning cell does
+not shift a neighboring cell's opening text to the end of that row.
 
 One page-reference parser handles numeric/cardinal/ordinal page and slide forms,
 including compound ordinals, `last`/`final`, and `after the [ordinal] page break`.

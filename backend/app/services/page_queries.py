@@ -71,9 +71,9 @@ def parse_page_reference(query: str) -> PageReference | None:
         if any((s.number, s.last) != (first.number, first.last) for s in selectors[1:]):
             return PageReference(invalid=True)
         return PageReference(first.number, first.last, any(s.slide for s in selectors), first.invalid)
-    match = re.search(_BREAK, lowered)
-    if match:
-        number = ordinal_number(match.group("number")) if match.group("number") else 1
+    break_match = re.search(_BREAK, lowered)
+    if break_match:
+        number = ordinal_number(break_match.group("number")) if break_match.group("number") else 1
         return PageReference(number=number + 1 if number else None, invalid=number is None)
     return None
 
