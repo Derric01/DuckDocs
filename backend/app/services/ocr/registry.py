@@ -3,7 +3,7 @@
 `DUCKDOCS_OCR_ENGINE` picks the backend:
   auto (default) -- RapidOCR, then Tesseract
   rapidocr       -- RapidOCR only (PP-OCR models via ONNX, weights bundled)
-  paddleocr      -- PaddleOCR only (upstream runtime; downloads weights)
+  paddleocr      -- PaddleOCR only (requires local det/ and rec/ weights)
   tesseract      -- Tesseract only
 
 "auto" tries engines in order and falls back rather than failing ingestion.

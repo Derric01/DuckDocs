@@ -43,6 +43,7 @@ services:
       DUCKDOCS_FRONTEND_ORIGIN: http://localhost:${DUCKDOCS_FRONTEND_PORT:-3000}
       DUCKDOCS_DATA_ROOT: /app/data
       DUCKDOCS_STRICT_LOCAL: ${DUCKDOCS_STRICT_LOCAL:-true}
+      DUCKDOCS_OCR_MODEL_DIR: /models/ocr
       DUCKDOCS_LOCAL_MODEL: ${DUCKDOCS_LOCAL_MODEL:-llama3.2:1b}
       DUCKDOCS_CHAT_MODEL: ${DUCKDOCS_CHAT_MODEL:-llama3.2:1b}
       DUCKDOCS_EMBED_MODEL: ${DUCKDOCS_EMBED_MODEL:-nomic-embed-text}
@@ -54,6 +55,7 @@ services:
       DUCKDOCS_DB_URL: postgresql+psycopg://${DUCKDOCS_POSTGRES_USER:-duckdocs}:${DUCKDOCS_POSTGRES_PASSWORD:-duckdocs-local-only}@postgres:5432/${DUCKDOCS_POSTGRES_DB:-duckdocs}
     volumes:
       - ./data:/app/data
+      - ${DUCKDOCS_OCR_MODEL_DIR:-./data/ocr-models}:/models/ocr:ro
     depends_on:
       postgres:
         condition: service_healthy

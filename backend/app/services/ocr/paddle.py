@@ -1,8 +1,7 @@
-"""PaddleOCR engine (default).
+"""PaddleOCR engine (optional, requires pre-mounted local weights).
 
-PaddleOCR runs entirely on the local machine: weights are fetched once on
-first use and cached under the model directory, after which recognition is
-offline with no API key, no per-page quota, and no request to any provider.
+PaddleOCR is used only when both detection and recognition weights already
+exist under DUCKDOCS_OCR_MODEL_DIR. It never downloads models at runtime.
 It is the default engine because, relative to Tesseract, it recognizes
 low-quality scans and non-Latin scripts substantially better and returns
 per-line quadrilaterals, which give citations real bounding-box anchors
@@ -15,6 +14,7 @@ registry falls back to Tesseract rather than failing ingestion.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.services.ocr.base import BoundingBox, OcrLine, OcrResult, aggregate_confidence
@@ -85,6 +85,15 @@ class PaddleOcrEngine:
             return self._reader
         if self._load_failed and language == self._language:
             return None
+        if not self._model_dir:
+            self._load_failed = True
+            return None
+        model_root = Path(self._model_dir)
+        detection_dir = model_root / "det"
+        recognition_dir = model_root / "rec"
+        if not _contains_paddle_weights(detection_dir) or not _contains_paddle_weights(recognition_dir):
+            self._load_failed = True
+            return None
         try:
             from paddleocr import PaddleOCR
         except ImportError:
@@ -93,15 +102,14 @@ class PaddleOcrEngine:
         try:
             kwargs: dict[str, Any] = {
                 "lang": language,
-                # Orientation/unwarping submodels add two more downloads and
-                # meaningful CPU cost; the ingestion pipeline already renders
-                # PDF pages upright, so they stay off by default.
+                # Keep orientation/unwarping off: these require additional
+                # model assets beyond the mounted detection/recognition pair.
                 "use_doc_orientation_classify": False,
                 "use_doc_unwarping": False,
                 "use_textline_orientation": False,
             }
-            if self._model_dir:
-                kwargs["paddlex_config"] = self._model_dir
+            kwargs["text_detection_model_dir"] = str(detection_dir)
+            kwargs["text_recognition_model_dir"] = str(recognition_dir)
             self._reader = PaddleOCR(**kwargs)
             self._language = language
             self._load_failed = False
@@ -181,3 +189,13 @@ class PaddleOcrEngine:
             engine=self.name,
             lines=lines,
         )
+
+
+def _contains_paddle_weights(directory: Path) -> bool:
+    """Recognize exported Paddle inference model files without network access."""
+    if not directory.is_dir():
+        return False
+    files = {path.name for path in directory.iterdir() if path.is_file()}
+    return {"inference.pdmodel", "inference.pdiparams"} <= files or {
+        "inference.json", "inference.pdiparams"
+    } <= files
