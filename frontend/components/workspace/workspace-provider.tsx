@@ -34,6 +34,7 @@ interface WorkspaceValue {
   stopAsking: () => void;
 
   providers: ProviderConfigRecord[];
+  strictLocal: boolean;
   providersLoading: boolean;
   refreshProviders: () => Promise<void>;
 }
@@ -76,6 +77,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [draft, setDraft] = useState('');
   const abortRef = useRef<AbortController | null>(null);
   const [providers, setProviders] = useState<ProviderConfigRecord[]>([]);
+  const [strictLocal, setStrictLocal] = useState(true);
   const [providersLoading, setProvidersLoading] = useState(false);
 
   const refreshDocuments = useCallback(async () => {
@@ -94,7 +96,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const refreshProviders = useCallback(async () => {
     setProvidersLoading(true);
     try {
-      setProviders(await duckDocsApi.listProviderConfigs());
+      const [configs, settings] = await Promise.all([duckDocsApi.listProviderConfigs(), duckDocsApi.getSettings()]);
+      setProviders(configs);
+      setStrictLocal(settings.local_only);
       setConnection('ready');
     } catch {
       setProviders([]);
@@ -288,6 +292,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       ask,
       stopAsking,
       providers,
+      strictLocal,
       providersLoading,
       refreshProviders,
     }),
@@ -306,6 +311,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       ask,
       stopAsking,
       providers,
+      strictLocal,
       providersLoading,
       refreshProviders,
     ],

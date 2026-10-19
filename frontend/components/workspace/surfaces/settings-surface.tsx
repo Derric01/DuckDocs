@@ -32,7 +32,7 @@ const PROVIDER_LABEL: Record<string, string> = {
 };
 
 export function SettingsSurface() {
-  const { providers, providersLoading, refreshProviders, connection } = useWorkspace();
+  const { providers, providersLoading, refreshProviders, connection, strictLocal } = useWorkspace();
   const { notify } = useToast();
 
   const [theme, setTheme] = useState<ThemeChoice>('system');
@@ -114,10 +114,12 @@ export function SettingsSurface() {
               <Plus className="size-3.5" aria-hidden />
               Configure Ollama
             </Button>
-            <Button onClick={() => setRemoteOpen(true)}>
-              <Plus className="size-3.5" aria-hidden />
-              Add remote provider
-            </Button>
+            {!strictLocal && (
+              <Button onClick={() => setRemoteOpen(true)}>
+                <Plus className="size-3.5" aria-hidden />
+                Add remote provider
+              </Button>
+            )}
           </div>
 
           {providersLoading ? (
@@ -211,7 +213,7 @@ export function SettingsSurface() {
         </Section>
       </div>
 
-      <Dialog open={remoteOpen} onOpenChange={setRemoteOpen}>
+      {!strictLocal && <Dialog open={remoteOpen} onOpenChange={setRemoteOpen}>
         <RemoteProviderDialog
           onSaved={async () => {
             setRemoteOpen(false);
@@ -220,7 +222,7 @@ export function SettingsSurface() {
           }}
           onError={(message) => notify(message, 'error')}
         />
-      </Dialog>
+      </Dialog>}
     </div>
   );
 }

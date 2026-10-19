@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Response
 
 from app.api.dependencies import RegistryDep, SecretsDep
@@ -15,6 +18,21 @@ from app.domain.models import (
 )
 
 router = APIRouter(tags=["settings"])
+
+
+def _is_local_url(value: str) -> bool:
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if parsed.scheme not in {"http", "https"} or not host or parsed.username or parsed.password:
+        return False
+    if host == "localhost" or host.endswith(".localhost") or host.endswith(".docker.internal"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        # Compose service names are single-label DNS names on the private
+        # application network (for example, "ollama").
+        return "." not in host and host not in {"metadata", "metadata.google.internal"}
 
 
 def _provider_local(provider_type: str) -> bool:
@@ -57,7 +75,7 @@ async def providers(registry: RegistryDep) -> list[Provider]:
 
 @router.get("/settings", response_model=SettingsResponse)
 async def get_settings_endpoint(registry: RegistryDep) -> SettingsResponse:
-    return SettingsResponse(providers=await providers(registry))
+    return SettingsResponse(local_only=registry.settings.strict_local, providers=await providers(registry))
 
 
 @router.get("/settings/providers", response_model=list[ProviderConfigResponse])
@@ -90,6 +108,11 @@ async def create_provider_config(
     registry: RegistryDep,
     secrets: SecretsDep,
 ) -> ProviderConfigResponse:
+    if registry.settings.strict_local:
+        if body.provider_type in {"openai", "anthropic", "gemini"}:
+            raise DuckDocsError("strict_local", "Remote providers are disabled while strict local mode is on.", 400)
+        if body.base_url and not _is_local_url(body.base_url):
+            raise DuckDocsError("strict_local", "Provider URL must point to localhost or a Docker-internal host.", 400)
     api_key_ref = secrets.put(body.api_key) if body.api_key else None
     config = registry.create_config(
         role=body.role,

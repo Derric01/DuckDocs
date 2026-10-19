@@ -423,6 +423,7 @@ export const duckDocsApi = {
     const response = await request<ApiProviderConfig[]>('/settings/providers');
     return response.map(mapProviderConfig);
   },
+  getSettings: async () => request<{ local_only: boolean }>('/settings'),
   createProviderConfig: async (payload: {
     role: 'chat' | 'embedding';
     providerType: string;

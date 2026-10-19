@@ -49,6 +49,7 @@ class Settings:
     ask_retries: int = 0
     ollama_keep_alive: str = "10m"
     reranker: str = "off"
+    strict_local: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -91,6 +92,7 @@ class Settings:
             ask_retries=int(os.getenv("DUCKDOCS_ASK_RETRIES", "0")),
             ollama_keep_alive=os.getenv("OLLAMA_KEEP_ALIVE", "10m"),
             reranker=os.getenv("DUCKDOCS_RERANKER", "off").strip().lower(),
+            strict_local=os.getenv("DUCKDOCS_STRICT_LOCAL", "true").strip().lower() not in {"0", "false", "no", "off"},
         )
 
 
