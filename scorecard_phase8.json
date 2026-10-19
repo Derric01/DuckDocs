@@ -1,0 +1,892 @@
+{
+  "label": "phase8",
+  "results": [
+    [
+      1,
+      "PASS",
+      "yes"
+    ],
+    [
+      2,
+      "PASS",
+      "yes"
+    ],
+    [
+      3,
+      "FAIL",
+      "NO"
+    ],
+    [
+      4,
+      "PASS",
+      "yes"
+    ],
+    [
+      5,
+      "PASS",
+      "yes"
+    ],
+    [
+      6,
+      "PASS",
+      "yes"
+    ],
+    [
+      7,
+      "PASS",
+      "yes"
+    ],
+    [
+      8,
+      "PASS",
+      "yes"
+    ],
+    [
+      9,
+      "PASS",
+      "yes"
+    ],
+    [
+      10,
+      "PASS",
+      "yes"
+    ],
+    [
+      11,
+      "PASS",
+      "yes"
+    ],
+    [
+      12,
+      "PASS",
+      "n/a"
+    ],
+    [
+      13,
+      "PASS",
+      "n/a"
+    ]
+  ],
+  "raw": {
+    "1": {
+      "id": "resp_c8d960147c65",
+      "kind": "ask",
+      "query": "What is the test marker in the native text PDF?",
+      "outcome": "grounded",
+      "answer": "The test marker in the native text PDF is NATIVE-PDF-7f3a2b.",
+      "grounded": true,
+      "citations": [
+        {
+          "id": "cit_5b2588bf70",
+          "ordinal": 1,
+          "evidence_unit_id": "ev_0d2350693333_0001",
+          "snippet": "Test marker: NATIVE-PDF-7f3a2b",
+          "page": 1,
+          "sheet_name": null,
+          "row_number": null,
+          "column": null,
+          "key_path": null
+        }
+      ],
+      "retrieved_chunk_count": 1,
+      "provider": {
+        "kind": "chat",
+        "name": "ollama",
+        "model": "llama3.2:1b"
+      },
+      "created_at": "2026-10-19T10:04:06.749869Z",
+      "refusal_reason": null,
+      "refusal_detail": null,
+      "diagnostic": {
+        "top_score": 1.0,
+        "threshold": 0.35,
+        "top_raw_cosine": 0.7435,
+        "top_lexical_coverage": 1.0,
+        "top5": [
+          {
+            "document": "01-native-text.pdf",
+            "score": 1.0,
+            "raw_cosine": 0.7435,
+            "lexical_coverage": 1.0
+          }
+        ],
+        "confidence": 1.0,
+        "retrieval": 1.0,
+        "coverage": 1.0,
+        "ocr": 1.0,
+        "model_rejected": null
+      },
+      "citation_sources": [
+        "01-native-text.pdf"
+      ]
+    },
+    "2": {
+      "id": "resp_a9907ebb8bfb",
+      "kind": "ask",
+      "query": "What is the test marker in the scanned OCR PDF?",
+      "outcome": "grounded",
+      "answer": "Testmarker:SCAN-PDF-9d1c4e.",
+      "grounded": true,
+      "citations": [
+        {
+          "id": "cit_d7ac0fadd2",
+          "ordinal": 1,
+          "evidence_unit_id": "ev_e73686dd7215_0001",
+          "snippet": "Testmarker:SCAN-PDF-9d1c4e",
+          "page": 1,
+          "sheet_name": null,
+          "row_number": null,
+          "column": null,
+          "key_path": null
+        }
+      ],
+      "retrieved_chunk_count": 4,
+      "provider": {
+        "kind": "chat",
+        "name": "extractive",
+        "model": "evidence_synthesis_v1"
+      },
+      "created_at": "2026-10-19T10:04:52.246693Z",
+      "refusal_reason": null,
+      "refusal_detail": null,
+      "diagnostic": {
+        "top_score": 1.0,
+        "threshold": 0.35,
+        "top_raw_cosine": 0.8014,
+        "top_lexical_coverage": 0.4681,
+        "top5": [
+          {
+            "document": "02-scanned-ocr.pdf",
+            "score": 1.0,
+            "raw_cosine": 0.8014,
+            "lexical_coverage": 0.4681
+          },
+          {
+            "document": "03-scanned-multipage.pdf",
+            "score": 1.0,
+            "raw_cosine": 0.7429,
+            "lexical_coverage": 0.4934
+          },
+          {
+            "document": "03-scanned-multipage.pdf",
+            "score": 1.0,
+            "raw_cosine": 0.7359,
+            "lexical_coverage": 0.4934
+          },
+          {
+            "document": "03-scanned-multipage.pdf",
+            "score": 1.0,
+            "raw_cosine": 0.7282,
+            "lexical_coverage": 0.4934
+          }
+        ],
+        "confidence": 0.846,
+        "retrieval": 1.0,
+        "coverage": 0.25,
+        "ocr": 0.987,
+        "model_rejected": "content_not_informative"
+      },
+      "citation_sources": [
+        "02-scanned-ocr.pdf"
+      ]
+    },
+    "3": {
+      "id": "resp_ba5f754522f0",
+      "kind": "ask",
+      "query": "What is the annual average high temperature in Kyoto?",
+      "outcome": "insufficient_evidence",
+      "answer": null,
+      "grounded": false,
+      "citations": [],
+      "retrieved_chunk_count": 12,
+      "provider": {
+        "kind": "chat",
+        "name": "ollama",
+        "model": "llama3.2:1b"
+      },
+      "created_at": "2026-10-19T10:04:59.940409Z",
+      "refusal_reason": "low_support",
+      "refusal_detail": null,
+      "diagnostic": {
+        "top_score": 1.0,
+        "threshold": 0.35,
+        "min_support": 0.1,
+        "top_raw_cosine": 0.4307,
+        "top_lexical_coverage": 0.0,
+        "top5": [
+          {
+            "document": "14-data.xml",
+            "score": 1.0,
+            "raw_cosine": 0.4307,
+            "lexical_coverage": 0.0
+          },
+          {
+            "document": "06-document.docx",
+            "score": 0.9839,
+            "raw_cosine": 0.4256,
+            "lexical_coverage": 0.0
+          },
+          {
+            "document": "09-data.csv",
+            "score": 0.9683,
+            "raw_cosine": 0.4087,
+            "lexical_coverage": 0.0
+          },
+          {
+            "document": "13-config.yaml",
+            "score": 0.9531,
+            "raw_cosine": 0.4064,
+            "lexical_coverage": 0.0
+          },
+          {
+            "document": "06-document.docx",
+            "score": 0.9385,
+            "raw_cosine": 0.4036,
+            "lexical_coverage": 0.0
+          }
+        ]
+      },
+      "citation_sources": []
+    },
+    "4": {
+      "id": "resp_0d786793d752",
+      "kind": "ask",
+      "query": "What is the marker on page 2 of the scanned multi-page document?",
+      "outcome": "grounded",
+      "answer": "Page marker:SCAN-PAGE-2-b82e Use this file to test DUCKDOCS_OCR_BATCH_SIZE behaviour across multiple scanned pages in one document.",
+      "grounded": true,
+      "citations": [
+        {
+          "id": "cit_9b058c0517",
+          "ordinal": 1,
+          "evidence_unit_id": "ev_3741ac74358f_0002",
+          "snippet": "Page marker:SCAN-PAGE-2-b82e Use this file to test DUCKDOCS_OCR_BATCH_SIZE behaviour across multiple scanned pages in one document",
+          "page": 2,
+          "sheet_name": null,
+          "row_number": null,
+          "column": null,
+          "key_path": null
+        }
+      ],
+      "retrieved_chunk_count": 1,
+      "provider": {
+        "kind": "chat",
+        "name": "extractive",
+        "model": "evidence_synthesis_v1"
+      },
+      "created_at": "2026-10-19T10:05:01.435835Z",
+      "refusal_reason": null,
+      "refusal_detail": null,
+      "diagnostic": {
+        "top_score": 1.0,
+        "threshold": 0.35,
+        "top_raw_cosine": 0.7325,
+        "top_lexical_coverage": 0.3956,
+        "top5": [
+          {
+            "document": "03-scanned-multipage.pdf",
+            "score": 1.0,
+            "raw_cosine": 0.7325,
+            "lexical_coverage": 0.3956
+          }
+        ],
+        "confidence": 0.996,
+        "retrieval": 1.0,
+        "coverage": 1.0,
+        "ocr": 0.985,
+        "model_rejected": "content_not_informative"
+      },
+      "citation_sources": [
+        "03-scanned-multipage.pdf"
+      ]
+    },
+    "5": {
+      "id": "resp_2870f2059838",
+      "kind": "ask",
+      "query": "What's written in the presentation's third slide?",
+      "outcome": "grounded",
+      "answer": "Slide 3 Slide 3: Final marker Test marker: PPTX-SLIDE3-ce02.",
+      "grounded": true,
+      "citations": [
+        {
+          "id": "cit_c7c4ea6016",
+          "ordinal": 1,
+          "evidence_unit_id": "ev_cc91f517f92d_0003",
+          "snippet": "Slide 3 Slide 3: Final marker Test marker: PPTX-SLIDE3-ce02",
+          "page": 3,
+          "sheet_name": null,
+          "row_number": null,
+          "column": null,
+          "key_path": null
+        }
+      ],
+      "retrieved_chunk_count": 1,
+      "provider": {
+        "kind": "chat",
+        "name": "extractive",
+        "model": "evidence_synthesis_v1"
+      },
+      "created_at": "2026-10-19T10:05:05.384170Z",
+      "refusal_reason": null,
+      "refusal_detail": null,
+      "diagnostic": {
+        "top_score": 1.0,
+        "threshold": 0.35,
+        "top_raw_cosine": 0.6816,
+        "top_lexical_coverage": 0.3158,
+        "top5": [
+          {
+            "document": "08-presentation.pptx",
+            "score": 1.0,
+            "raw_cosine": 0.6816,
+            "lexical_coverage": 0.3158
+          }
+        ],
+        "confidence": 1.0,
+        "retrieval": 1.0,
+        "coverage": 1.0,
+        "ocr": 1.0,
+        "model_rejected": "claim_not_in_evidence"
+      },
+      "citation_sources": [
+        "08-presentation.pptx"
+      ]
+    },
+    "6": {
+      "id": "resp_5b54ce9f1440",
+      "kind": "ask",
+      "query": "What does the paragraph on the second page of the Word document say?",
+      "outcome": "grounded",
+      "answer": "This paragraph is on a new page - use it to confirm page-break awareness.",
+      "grounded": true,
+      "citations": [
+        {
+          "id": "cit_e5db099868",
+          "ordinal": 1,
+          "evidence_unit_id": "ev_9d883b43db57_0007",
+          "snippet": "This paragraph is on a new page - use it to confirm page-break awareness.",
+          "page": 2,
+          "sheet_name": null,
+          "row_number": null,
+          "column": null,
+          "key_path": null
+        }
+      ],
+      "retrieved_chunk_count": 12,
+      "provider": {
+        "kind": "chat",
+        "name": "deterministic",
+        "model": "paragraph_v1"
+      },
+      "created_at": "2026-10-19T10:05:08.307210Z",
+      "refusal_reason": null,
+      "refusal_detail": null,
+      "diagnostic": {
+        "page": 2,
+        "paragraph_number": 2,
+        "verified": true
+      },
+      "citation_sources": [
+        "06-document.docx"
+      ]
+    },
+    "7": {
+      "id": "resp_cd9cb0c19537",
+      "kind": "ask",
+      "query": "How many units of Widget A are in stock?",
+      "outcome": "grounded",
+      "answer": "Stock: 12",
+      "grounded": true,
+      "citations": [
+        {
+          "id": "cit_f112b35e51",
+          "ordinal": 1,
+          "evidence_unit_id": "ev_111d187d9e04_0006",
+          "snippet": "Item: Widget A | Stock: 12",
+          "page": 2,
+          "sheet_name": "Inventory",
+          "row_number": 2,
+          "column": "Item, Stock",
+          "key_path": null
+        }
+      ],
+      "retrieved_chunk_count": 4,
+      "provider": {
+        "kind": "chat",
+        "name": "deterministic",
+        "model": "structured_v1"
+      },
+      "created_at": "2026-10-19T10:05:08.386010Z",
+      "refusal_reason": null,
+      "refusal_detail": null,
+      "diagnostic": {
+        "structured_operation": "lookup",
+        "selected_rows": 1,
+        "verified": true,
+        "plan_verified": true,
+        "structured_plan": {
+          "operation": "lookup",
+          "columns": [
+            "Stock"
+          ],
+          "filters": [
+            {
+              "column": "Item",
+              "operator": "eq",
+              "values": [
+                "Widget A"
+              ]
+            }
+          ]
+        },
+        "table_candidates": [
+          {
+            "document": "07-spreadsheet.xlsx",
+            "sheet": "Sales",
+            "status": "filter_unmapped"
+          },
+          {
+            "document": "07-spreadsheet.xlsx",
+            "sheet": "Inventory",
+            "status": "mapped",
+            "operation": "lookup",
+            "columns": [
+              "Stock"
+            ],
+            "filters": [
+              {
+                "column": "Item",
+                "operator": "eq",
+                "values": [
+                  "Widget A"
+                ]
+              }
+            ]
+          },
+          {
+            "document": "09-data.csv",
+            "sheet": null,
+            "status": "column_unmapped"
+          },
+          {
+            "document": "Reingest Check value test.csv",
+            "sheet": "Sheet1",
+            "status": "column_unmapped"
+          }
+        ]
+      },
+      "citation_sources": [
+        "07-spreadsheet.xlsx"
+      ]
+    },
+    "8": {
+      "id": "resp_b36ebd66fdca",
+      "kind": "ask",
+      "query": "What was the total revenue across January, February, and March in the sales spreadsheet?",
+      "outcome": "grounded",
+      "answer": "Revenue: 12000 + 15500 + 9800 = 37300",
+      "grounded": true,
+      "citations": [
+        {
+          "id": "cit_6bcbc0a181",
+          "ordinal": 1,
+          "evidence_unit_id": "ev_111d187d9e04_0002",
+          "snippet": "Month: Jan | Revenue: 12000",
+          "page": 1,
+          "sheet_name": "Sales",
+          "row_number": 2,
+          "column": "Month, Revenue",
+          "key_path": null
+        },
+        {
+          "id": "cit_3ddb092dcc",
+          "ordinal": 2,
+          "evidence_unit_id": "ev_111d187d9e04_0003",
+          "snippet": "Month: Feb | Revenue: 15500",
+          "page": 1,
+          "sheet_name": "Sales",
+          "row_number": 3,
+          "column": "Month, Revenue",
+          "key_path": null
+        },
+        {
+          "id": "cit_d96c3b6c4f",
+          "ordinal": 3,
+          "evidence_unit_id": "ev_111d187d9e04_0004",
+          "snippet": "Month: Mar | Revenue: 9800",
+          "page": 1,
+          "sheet_name": "Sales",
+          "row_number": 4,
+          "column": "Month, Revenue",
+          "key_path": null
+        }
+      ],
+      "retrieved_chunk_count": 4,
+      "provider": {
+        "kind": "chat",
+        "name": "deterministic",
+        "model": "structured_v1"
+      },
+      "created_at": "2026-10-19T10:05:08.535160Z",
+      "refusal_reason": null,
+      "refusal_detail": null,
+      "diagnostic": {
+        "structured_operation": "sum",
+        "selected_rows": 3,
+        "verified": true,
+        "plan_verified": true,
+        "structured_plan": {
+          "operation": "sum",
+          "columns": [
+            "Revenue"
+          ],
+          "filters": [
+            {
+              "column": "Month",
+              "operator": "eq",
+              "values": [
+                "Jan",
+                "Feb",
+                "Mar"
+              ]
+            }
+          ]
+        },
+        "table_candidates": [
+          {
+            "document": "07-spreadsheet.xlsx",
+            "sheet": "Sales",
+            "status": "mapped",
+            "operation": "sum",
+            "columns": [
+              "Revenue"
+            ],
+            "filters": [
+              {
+                "column": "Month",
+                "operator": "eq",
+                "values": [
+                  "Jan",
+                  "Feb",
+                  "Mar"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "citation_sources": [
+        "07-spreadsheet.xlsx",
+        "07-spreadsheet.xlsx",
+        "07-spreadsheet.xlsx"
+      ]
+    },
+    "9": {
+      "id": "resp_16a5d0312e47",
+      "kind": "ask",
+      "query": "Which employees work in the Engineering department and what are their salaries?",
+      "outcome": "grounded",
+      "answer": "name: Asha Rao; department: Engineering; salary: 85000\nname: Priya Nair; department: Engineering; salary: 91000",
+      "grounded": true,
+      "citations": [
+        {
+          "id": "cit_878eaf2f87",
+          "ordinal": 1,
+          "evidence_unit_id": "ev_5ce0ae9ada59_0002",
+          "snippet": "name: Asha Rao | department: Engineering | salary: 85000",
+          "page": 1,
+          "sheet_name": null,
+          "row_number": 2,
+          "column": "name, department, salary",
+          "key_path": null
+        },
+        {
+          "id": "cit_9e178551dd",
+          "ordinal": 2,
+          "evidence_unit_id": "ev_5ce0ae9ada59_0004",
+          "snippet": "name: Priya Nair | department: Engineering | salary: 91000",
+          "page": 1,
+          "sheet_name": null,
+          "row_number": 4,
+          "column": "name, department, salary",
+          "key_path": null
+        }
+      ],
+      "retrieved_chunk_count": 5,
+      "provider": {
+        "kind": "chat",
+        "name": "deterministic",
+        "model": "structured_v1"
+      },
+      "created_at": "2026-10-19T10:05:08.583017Z",
+      "refusal_reason": null,
+      "refusal_detail": null,
+      "diagnostic": {
+        "structured_operation": "lookup",
+        "selected_rows": 2,
+        "verified": true,
+        "plan_verified": true,
+        "structured_plan": {
+          "operation": "lookup",
+          "columns": [
+            "name",
+            "department",
+            "salary"
+          ],
+          "filters": [
+            {
+              "column": "department",
+              "operator": "eq",
+              "values": [
+                "Engineering"
+              ]
+            }
+          ]
+        },
+        "table_candidates": [
+          {
+            "document": "07-spreadsheet.xlsx",
+            "sheet": "Sales",
+            "status": "column_unmapped"
+          },
+          {
+            "document": "07-spreadsheet.xlsx",
+            "sheet": "Inventory",
+            "status": "column_unmapped"
+          },
+          {
+            "document": "09-data.csv",
+            "sheet": null,
+            "status": "mapped",
+            "operation": "lookup",
+            "columns": [
+              "name",
+              "department",
+              "salary"
+            ],
+            "filters": [
+              {
+                "column": "department",
+                "operator": "eq",
+                "values": [
+                  "Engineering"
+                ]
+              }
+            ]
+          },
+          {
+            "document": "Reingest Check value test.csv",
+            "sheet": "Sheet1",
+            "status": "column_unmapped"
+          }
+        ]
+      },
+      "citation_sources": [
+        "09-data.csv",
+        "09-data.csv"
+      ]
+    },
+    "10": {
+      "id": "resp_e33f3d8a70b8",
+      "kind": "ask",
+      "query": "What's the marker value in the YAML config file?",
+      "outcome": "grounded",
+      "answer": "$.marker: \"YAML-MARKER-2d9b\"",
+      "grounded": true,
+      "citations": [
+        {
+          "id": "cit_c2b0cd6860",
+          "ordinal": 1,
+          "evidence_unit_id": "ev_8b69921f875b_0003",
+          "snippet": "$.marker: \"YAML-MARKER-2d9b\"",
+          "page": 1,
+          "sheet_name": null,
+          "row_number": null,
+          "column": null,
+          "key_path": "$.marker"
+        }
+      ],
+      "retrieved_chunk_count": 5,
+      "provider": {
+        "kind": "chat",
+        "name": "deterministic",
+        "model": "key_path_v1"
+      },
+      "created_at": "2026-10-19T10:05:08.652126Z",
+      "refusal_reason": null,
+      "refusal_detail": null,
+      "diagnostic": {
+        "structured_operation": "key_lookup",
+        "verified": true
+      },
+      "citation_sources": [
+        "13-config.yaml"
+      ]
+    },
+    "11": {
+      "id": "resp_f4cdeae34295",
+      "kind": "ask",
+      "query": "What items are listed in the XML file?",
+      "outcome": "grounded",
+      "answer": "/root/item[1]: First\n/root/item[2]: Second",
+      "grounded": true,
+      "citations": [
+        {
+          "id": "cit_6e6a4f8e42",
+          "ordinal": 1,
+          "evidence_unit_id": "ev_35d39e0a3a30_0003",
+          "snippet": "/root/item[1]: First",
+          "page": 1,
+          "sheet_name": null,
+          "row_number": null,
+          "column": null,
+          "key_path": "/root/item[1]"
+        },
+        {
+          "id": "cit_ed4ca90637",
+          "ordinal": 2,
+          "evidence_unit_id": "ev_35d39e0a3a30_0005",
+          "snippet": "/root/item[2]: Second",
+          "page": 1,
+          "sheet_name": null,
+          "row_number": null,
+          "column": null,
+          "key_path": "/root/item[2]"
+        }
+      ],
+      "retrieved_chunk_count": 5,
+      "provider": {
+        "kind": "chat",
+        "name": "deterministic",
+        "model": "key_path_v1"
+      },
+      "created_at": "2026-10-19T10:05:08.718159Z",
+      "refusal_reason": null,
+      "refusal_detail": null,
+      "diagnostic": {
+        "structured_operation": "key_lookup",
+        "verified": true
+      },
+      "citation_sources": [
+        "14-data.xml",
+        "14-data.xml"
+      ]
+    },
+    "12": {
+      "id": "resp_59b1a50e0aa5",
+      "kind": "ask",
+      "query": "What is DuckDocs' pricing model?",
+      "outcome": "insufficient_evidence",
+      "answer": null,
+      "grounded": false,
+      "citations": [],
+      "retrieved_chunk_count": 12,
+      "provider": {
+        "kind": "chat",
+        "name": "ollama",
+        "model": "llama3.2:1b"
+      },
+      "created_at": "2026-10-19T10:05:09.513154Z",
+      "refusal_reason": "low_support",
+      "refusal_detail": null,
+      "diagnostic": {
+        "top_score": 1.0,
+        "threshold": 0.35,
+        "min_support": 0.1,
+        "top_raw_cosine": 0.6269,
+        "top_lexical_coverage": 0.0702,
+        "top5": [
+          {
+            "document": "12-notes.md",
+            "score": 1.0,
+            "raw_cosine": 0.6269,
+            "lexical_coverage": 0.0702
+          },
+          {
+            "document": "06-document.docx",
+            "score": 0.9839,
+            "raw_cosine": 0.6097,
+            "lexical_coverage": 0.0702
+          },
+          {
+            "document": "01-native-text.pdf",
+            "score": 0.9683,
+            "raw_cosine": 0.6,
+            "lexical_coverage": 0.3238
+          },
+          {
+            "document": "11-page.html",
+            "score": 0.9531,
+            "raw_cosine": 0.5968,
+            "lexical_coverage": 0.0702
+          },
+          {
+            "document": "04-image-text.png",
+            "score": 0.9385,
+            "raw_cosine": 0.5956,
+            "lexical_coverage": 0.0702
+          }
+        ]
+      },
+      "citation_sources": []
+    },
+    "13": {
+      "id": "resp_7081c5382144",
+      "kind": "ask",
+      "query": "Who is the CEO of DuckDocs?",
+      "outcome": "insufficient_evidence",
+      "answer": null,
+      "grounded": false,
+      "citations": [],
+      "retrieved_chunk_count": 12,
+      "provider": {
+        "kind": "chat",
+        "name": "ollama",
+        "model": "llama3.2:1b"
+      },
+      "created_at": "2026-10-19T10:05:10.901720Z",
+      "refusal_reason": "low_support",
+      "refusal_detail": null,
+      "diagnostic": {
+        "top_score": 1.0,
+        "threshold": 0.35,
+        "min_support": 0.1,
+        "top_raw_cosine": 0.5936,
+        "top_lexical_coverage": 0.0702,
+        "top5": [
+          {
+            "document": "12-notes.md",
+            "score": 1.0,
+            "raw_cosine": 0.5936,
+            "lexical_coverage": 0.0702
+          },
+          {
+            "document": "06-document.docx",
+            "score": 0.9839,
+            "raw_cosine": 0.5824,
+            "lexical_coverage": 0.0702
+          },
+          {
+            "document": "03-scanned-multipage.pdf",
+            "score": 0.9683,
+            "raw_cosine": 0.5652,
+            "lexical_coverage": 0.0702
+          },
+          {
+            "document": "11-page.html",
+            "score": 0.9531,
+            "raw_cosine": 0.5614,
+            "lexical_coverage": 0.0702
+          },
+          {
+            "document": "03-scanned-multipage.pdf",
+            "score": 0.9385,
+            "raw_cosine": 0.5531,
+            "lexical_coverage": 0.0702
+          }
+        ]
+      },
+      "citation_sources": []
+    }
+  }
+}

@@ -1,5 +1,41 @@
 # Scorecard Log
 
+## Phase 8 — privacy hardening and offline proof (19 October 2026)
+
+The Phase 6 verification report and its scorecard JSON (`output/phase6`,
+referenced below) are absent from this checkout and its workspace parent. The
+only available historical aggregate is Phase 5b's 12 PASS / 0 PARTIAL / 1 FAIL;
+it is not substituted for the requested Phase 6 `--baseline` comparison.
+
+The rebuilt Phase 8 stack passed container pytest: **366 passed**, with six
+dependency deprecation warnings. The current scorecard produced **12 PASS, 0
+PARTIAL, 1 FAIL**, with zero passing answers carrying a wrong or missing
+citation. Q3 failed with `low_support`: the current Library has 15 ready
+documents, but it contains `Reingest Check value test.csv` instead of the
+expected `Kyoto_Japan_itinerary.pdf`. The scorecard preflight checks count,
+evidence, and ingest state, not the expected fixture filenames. Q6 passed.
+This run cannot establish a no-regression result against Phase 6 because both
+its JSON and the expected Kyoto source are missing. The raw result is
+`scorecard_phase8.json` at the repository root. No Library files were changed.
+
+The images rebuilt successfully. With `docker-compose.offline.yml`, Docker
+reported the shared network `Internal=true`; a connection attempt from backend
+to `1.1.1.1:443` returned `connect_ex=101` (network unreachable), while its
+Chroma heartbeat returned HTTP 200. All five long-running services became
+healthy, including frontend health inside its container. On Docker Desktop for
+Windows, Docker did not publish the host ports while using an internal network;
+the overlay is suitable for the isolation check, while a Wi-Fi-off demo should
+use the regular Compose network so localhost port publishing remains usable.
+
+The PostHog `capture() takes 1 positional argument but 3 were given` error is
+**not gone**. A new Chroma 0.5.23 HttpClient with
+`Settings(anonymized_telemetry=False)` reproduced it. Chroma sets the PostHog
+client's `disabled` flag, but still calls its old three-argument capture API;
+the newer API raises before sending, and Chroma logs the exception. Telemetry
+is therefore disabled, but the compatibility error remains visible.
+
+Phase 8 changes are committed one item at a time. Phase 9 was not started.
+
 The scorecard is a measurement tool, not an implementation specification.
 Expected patterns remain in [`scorecard.py`](../scorecard.py); application
 behavior must be fixed generically rather than for individual fixture strings.
