@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+// next/font downloads these files during `next build` and serves the emitted
+// assets from this app; browsers never contact Google Fonts at runtime.
 import { Inter, JetBrains_Mono, Newsreader } from 'next/font/google';
 import { THEME_BOOTSTRAP } from '@/lib/theme';
 import './globals.css';
