@@ -39,6 +39,7 @@ class VectorStore:
     def _init_client(self) -> None:
         try:
             import chromadb
+            from chromadb.config import Settings as ChromaSettings
         except ImportError:
             self._available = False
             return
@@ -47,10 +48,17 @@ class VectorStore:
                 parsed = urlparse(self.settings.chroma_url)
                 host = parsed.hostname or "localhost"
                 port = parsed.port or 8000
-                self._client = chromadb.HttpClient(host=host, port=port)
+                self._client = chromadb.HttpClient(
+                    host=host,
+                    port=port,
+                    settings=ChromaSettings(anonymized_telemetry=False),
+                )
             else:
                 persist_path = str(self.settings.data_root / "vectors")
-                self._client = chromadb.PersistentClient(path=persist_path)
+                self._client = chromadb.PersistentClient(
+                    path=persist_path,
+                    settings=ChromaSettings(anonymized_telemetry=False),
+                )
             self._collection = self._client.get_or_create_collection(
                 name="duckdocs_evidence",
                 metadata={"hnsw:space": "cosine"},
