@@ -1,0 +1,5 @@
+services: {}
+
+networks:
+  duckdocs_internal:
+    internal: true
